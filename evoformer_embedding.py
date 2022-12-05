@@ -26,6 +26,7 @@ from openfold.utils.import_weights import (
     import_evoformer_weights_,
 )
 from openfold.model.evoformer_inference import Evoformer
+
 logging.basicConfig()
 logger = logging.getLogger(__file__)
 logger.setLevel(level=logging.INFO)
@@ -188,9 +189,7 @@ def main(args):
         config = model_config(model_name)
         model = Evoformer(config)
         model = model.eval()
-        npz_path = os.path.join(
-            args.jax_param_path, "params_" + model_name + ".npz"
-        )
+        npz_path = os.path.join(args.jax_param_path, "params_" + model_name + ".npz")
         import_evoformer_weights_(model, npz_path, version=model_name)
         model = model.to(args.model_device)
         if args.trace_model:
@@ -210,7 +209,7 @@ def main(args):
         # else:
         #     logger.info("Use custom template")
         #     template_featurizer = None
-            
+
         template_featurizer = None
         data_processor = data_pipeline.DataPipeline(
             template_featurizer=template_featurizer,
@@ -296,13 +295,14 @@ def main(args):
                     tracing_time = time.perf_counter() - t
                     logger.info(f"Tracing time: {tracing_time}")
                     cur_tracing_interval = rounded_seqlen
-            
+
             # Toss out the recycling dimensions
             processed_feature_dict = tensor_tree_map(
                 lambda x: x[..., -1], processed_feature_dict
             )
             out = run_model(model, processed_feature_dict, tag)
             out = tensor_tree_map(lambda x: np.array(x.cpu()), out)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

@@ -33,6 +33,7 @@ NN_config = {
     "dropout": 0.2,
 }
 
+
 def feature_extraction(ID_list, seq_list, outpath, feat_bs, save_feat, device):
     protein_features = {}
     if save_feat:
@@ -40,7 +41,9 @@ def feature_extraction(ID_list, seq_list, outpath, feat_bs, save_feat, device):
         os.makedirs(feat_path, exist_ok=True)
 
     # Load the vocabulary and ProtT5-XL-UniRef50 Model
-    tokenizer = T5Tokenizer.from_pretrained("Rostlab/prot_t5_xl_uniref50", do_lower_case=False)
+    tokenizer = T5Tokenizer.from_pretrained(
+        "Rostlab/prot_t5_xl_uniref50", do_lower_case=False
+    )
     model = T5EncoderModel.from_pretrained("Rostlab/prot_t5_xl_uniref50")
     gc.collect()
 
@@ -164,11 +167,7 @@ def predict(
 def main(run_id, seq_info, outpath, feat_bs, pred_bs, save_feat, gpu):
     ID_list, seq_list = seq_info
     # device = torch.device("cuda" if torch.cuda.is_available() and gpu else "cpu")
-    device = (
-        torch.device("cuda:{}".format(gpu))
-        if torch.cuda.is_available()
-        else "cpu"
-    )
+    device = torch.device("cuda:{}".format(gpu)) if torch.cuda.is_available() else "cpu"
 
     print(
         "\n######## Feature extraction begins at {}. ########\n".format(
