@@ -159,13 +159,14 @@ class LMetalSite(nn.Module):
         num_heads=4,
         augment_eps=0.05,
         dropout=0.2,
-        ion_type="ALL",
+        ion_type="ZN",
+        training=True,
     ):
         super(LMetalSite, self).__init__()
 
         # Hyperparameters
         self.augment_eps = augment_eps
-
+        self.training = training
         # Embedding layers
         self.input_block = nn.Sequential(
             nn.LayerNorm(feature_dim, eps=1e-6),
@@ -188,7 +189,7 @@ class LMetalSite(nn.Module):
                 for _ in range(num_encoder_layers)
             ]
         )
-        assert ion_type in ["ZN", "CA", "MG", "MN", "ALL"]
+        assert ion_type in ["ZN", "CA", "MG", "MN"]
         self.ion_type = ion_type
 
         # ion-specific layers
@@ -214,7 +215,6 @@ class LMetalSite(nn.Module):
             nn.Linear(hidden_dim, hidden_dim, bias=True),
             nn.LeakyReLU(),
             nn.Linear(hidden_dim, 1, bias=True),
-            requires_grad_=False,
         )
         self.MN_head.requires_grad_(False)
         # Initialization
@@ -230,11 +230,6 @@ class LMetalSite(nn.Module):
             self.MN_head.requires_grad_(True)
         elif self.ion_type == "MG":
             self.MG_head.requires_grad_(True)
-        else:
-            self.ZN_head.requires_grad_(True)
-            self.CA_head.requires_grad_(True)
-            self.MN_head.requires_grad_(True)
-            self.MG_head.requires_grad_(True)
 
     def forward(self, protein_feat, mask):
         # Data augmentation
@@ -249,9 +244,13 @@ class LMetalSite(nn.Module):
         for layer in self.encoder_layers:
             h_V = layer(h_V, mask)
 
-        logits_ZN = self.ZN_head(h_V).squeeze(-1)
-        logits_CA = self.CA_head(h_V).squeeze(-1)
-        logits_MG = self.MG_head(h_V).squeeze(-1)
-        logits_MN = self.MN_head(h_V).squeeze(-1)
+        if self.ion_type == "ZN":
+            logits = self.ZN_head(h_V).squeeze(-1)
+        elif self.ion_type == "CA":
+            logits = self.CA_head(h_V).squeeze(-1)
+        elif self.ion_type == "MN":
+            logits = self.MN_head(h_V).squeeze(-1)
+        elif self.ion_type == "MG":
+            logits = self.MG_head(h_V).squeeze(-1)
 
-        return torch.cat((logits_ZN, logits_CA, logits_MG, logits_MN), 1)
+        return logits

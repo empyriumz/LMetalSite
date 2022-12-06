@@ -26,7 +26,7 @@ Max_repr = np.load("script/ProtTrans_repr_max.npy")
 Min_repr = np.load("script/ProtTrans_repr_min.npy")
 
 metal_list = ["ZN", "CA", "MG", "MN"]
-LMetalSite_threshold = [0.42, 0.34, 0.5, 0.47]
+LMetalSite_threshold = {"ZN": 0.42, "CA": 0.34, "MG": 0.5, "MN": 0.47}
 
 
 def feature_extraction(ID_list, seq_list, conf, device):
@@ -99,7 +99,7 @@ def main(conf):
         else "cpu"
     )
     logging.info(
-        "\n######## Feature extraction begins at {}. ########\n".format(
+        "Feature extraction begins at {}".format(
             datetime.datetime.now().strftime("%m-%d %H:%M")
         )
     )
@@ -107,30 +107,29 @@ def main(conf):
     protein_features = feature_extraction(ID_list, seq_list, conf, device)
 
     logging.info(
-        "\n######## Feature extraction is done at {}. ########\n".format(
+        "Feature extraction is done at {}".format(
             datetime.datetime.now().strftime("%m-%d %H:%M")
         )
     )
     logging.info(
-        "\n######## Training begins at {}. ########\n".format(
-            datetime.datetime.now().strftime("%m-%d %H:%M")
-        )
+        "raining begins at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
     )
     pred_dict = {"ID": ID_list, "Sequence": seq_list, "Label": label_list}
     pred_df = pd.DataFrame(pred_dict)
 
-    for metal in metal_list:
-        pred_df[metal + "_prob"] = 0.0
-        pred_df[metal + "_pred"] = 0.0
+    ion_type = conf.model.ion_type
+    pred_df[ion_type + "_prob"] = 0.0
+    pred_df[ion_type + "_pred"] = 0.0
 
     train_dataset = MetalDataset(pred_df, protein_features, conf.model.feature_dim)
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=conf.training.batch_size,
         collate_fn=train_dataset.collate_fn,
-        shuffle=False,
+        shuffle=True,
         drop_last=False,
-        num_workers=4,
+        pin_memory=True,
+        num_workers=8,
     )
     # Load LMetalSite model
     model = LMetalSite(
@@ -151,8 +150,7 @@ def main(conf):
     loss_func = torch.nn.BCEWithLogitsLoss()
 
     # Make Predictions
-    prob_col = [[] for _ in range(len(metal_list))]
-    pred_col = [[] for _ in range(len(metal_list))]
+    prob_col, pred_col = [], []
     for epoch in range(conf.training.epochs):
         train_loss = 0.0
         for batch_data in tqdm(train_dataloader):
@@ -170,24 +168,20 @@ def main(conf):
             )  # shape = (pred_bs, len(metal_list) * maxlen)
             running_loss = loss_.detach().cpu().numpy()
             train_loss += running_loss
-            for i in range(len(metal_list)):
-                for j in range(len(outputs)):
-                    prob = np.round(
-                        outputs[j, i * maxlen : i * maxlen + protein_masks[j].sum()],
-                        decimals=4,
-                    )
-                    pred = (prob >= LMetalSite_threshold[i]).astype(int)
-                    prob_col[i].append(",".join(prob.astype(str).tolist()))
-                    pred_col[i].append(",".join(pred.astype(str).tolist()))
+        #     for j in range(len(outputs)):
+        #         prob = np.round(
+        #             outputs[j, i * maxlen : i * maxlen + protein_masks[j].sum()],
+        #             decimals=4,
+        #         )
+        #         pred = (prob >= LMetalSite_threshold[ion_type]).astype(int)
+        #         prob_col.append(",".join(prob.astype(str).tolist()))
+        #         pred_col.append(",".join(pred.astype(str).tolist()))
 
-        for i in range(len(metal_list)):
-            pred_df[metal_list[i] + "_prob"] = prob_col[i]
-            pred_df[metal_list[i] + "_pred"] = pred_col[i]
+        # pred_df[ion_type + "_prob"] = prob_col
+        # pred_df[ion_type + "_pred"] = pred_col
 
     logging.info(
-        "\n######## Training is done at {}. ########\n".format(
-            datetime.datetime.now().strftime("%m-%d %H:%M")
-        )
+        "Training is done at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
     )
 
 

@@ -54,14 +54,14 @@ class MetalDataset(Dataset):
     def __getitem__(self, idx):
         data = self.df.loc[idx]
         protein_feat = self.protein_features[data["ID"]]
-        protein_label = data["Label"]
+        protein_label = [int(label) for label in data["Label"]]
         return protein_feat, protein_label
 
     def padding(self, batch, maxlen):
         batch_protein_feat = []
         batch_protein_label = []
         batch_protein_mask = []
-        for protein_feat in batch:
+        for protein_feat, protein_label in batch:
             padded_protein_feat = np.zeros((maxlen, self.feature_dim))
             padded_protein_feat[: protein_feat.shape[0]] = protein_feat
             padded_protein_feat = torch.tensor(padded_protein_feat, dtype=torch.float)
@@ -70,11 +70,12 @@ class MetalDataset(Dataset):
             protein_mask = np.zeros(maxlen)
             protein_mask[: protein_feat.shape[0]] = 1
             protein_mask = torch.tensor(protein_mask, dtype=torch.long)
-
-            protein_label = np.zeros(maxlen)
-            protein_label[: protein_feat.shape[0]] = 1
-            protein_label = torch.tensor(protein_label, dtype=torch.long)
-            batch_protein_label.append(protein_label)
+            batch_protein_mask.append(protein_mask)
+            
+            padded_protein_label = np.zeros(maxlen)
+            padded_protein_label[: protein_feat.shape[0]] = protein_label
+            padded_protein_label = torch.tensor(padded_protein_label, dtype=torch.long)
+            batch_protein_label.append(padded_protein_label)
 
         return (
             torch.stack(batch_protein_feat),
@@ -83,7 +84,7 @@ class MetalDataset(Dataset):
         )
 
     def collate_fn(self, batch):
-        maxlen = max([protein_feat.shape[0] for protein_feat in batch])
+        maxlen = max([len(protein_label) for _, protein_label in batch])
         protein_feat, protein_label, protein_mask = self.padding(batch, maxlen)
 
         return protein_feat, protein_label, protein_mask, maxlen
