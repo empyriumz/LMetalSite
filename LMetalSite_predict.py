@@ -6,17 +6,16 @@ import torch
 from transformers import T5EncoderModel, T5Tokenizer
 from torch.utils.data import DataLoader
 import gc
-from utils import MetalDataset, process_fasta
-from model import LMetalSite
+from model.model import LMetalSite_Test
+from data.data_process import MetalDatasetTest, process_fasta
 
 ############ Set to your own path! ############
 # ProtTrans_path = "/home/yuanqm/protein_binding_sites/tools/Prot-T5-XL-U50"
 
-script_path = os.path.split(os.path.realpath(__file__))[0] + "/"
-model_path = os.path.dirname(script_path[0:-1]) + "/model/"
+model_path = "./model/"
 
-Max_repr = np.load(script_path + "ProtTrans_repr_max.npy")
-Min_repr = np.load(script_path + "ProtTrans_repr_min.npy")
+Max_repr = np.load("script/ProtTrans_repr_max.npy")
+Min_repr = np.load("script/ProtTrans_repr_min.npy")
 
 MAX_INPUT_SEQ = 500
 ID_col = "ID"
@@ -101,7 +100,7 @@ def predict(
         pred_df[metal + "_prob"] = 0.0
         pred_df[metal + "_pred"] = 0.0
 
-    test_dataset = MetalDataset(pred_df, protein_features)
+    test_dataset = MetalDatasetTest(pred_df, protein_features)
     test_dataloader = DataLoader(
         test_dataset,
         batch_size=pred_bs,
@@ -114,7 +113,7 @@ def predict(
     # Load LMetalSite models
     models = []
     for i in range(5):
-        model = LMetalSite(
+        model = LMetalSite_Test(
             config["feature_dim"],
             config["hidden_dim"],
             config["num_encoder_layers"],
@@ -234,7 +233,7 @@ if __name__ == "__main__":
     outpath = args.outpath.rstrip("/") + "/"
 
     run_id = args.fasta.split("/")[-1].split(".")[0]
-    seq_info = process_fasta(args.fasta)
+    seq_info = process_fasta(args.fasta, MAX_INPUT_SEQ)
 
     if seq_info == -1:
         print("The format of your input fasta file is incorrect! Please check!")
