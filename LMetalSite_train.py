@@ -1,109 +1,42 @@
-import os, datetime, argparse, re
-import numpy as np
+import datetime
+import argparse
 import pandas as pd
 import json
 import torch
-import gc
 import logging
-from transformers import T5EncoderModel, T5Tokenizer
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from ml_collections import config_dict
 from timeit import default_timer as timer
+from torchmetrics.classification import BinaryAUROC
 from pathlib import Path
 from script.utils import (
     add_alphafold_args,
     logging_related,
     parse_arguments,
 )
-from data.data_process import process_train_fasta, MetalDataset
+from data.data_process import process_train_fasta, feature_extraction, MetalDataset
 from model.model import LMetalSite
-
-############ Set to your own path! ############
-# ProtTrans_path = "/home/yuanqm/protein_binding_sites/tools/Prot-T5-XL-U50"
-
-Max_repr = np.load("script/ProtTrans_repr_max.npy")
-Min_repr = np.load("script/ProtTrans_repr_min.npy")
-
-metal_list = ["ZN", "CA", "MG", "MN"]
-LMetalSite_threshold = {"ZN": 0.42, "CA": 0.34, "MG": 0.5, "MN": 0.47}
-
-
-def feature_extraction(ID_list, seq_list, conf, device):
-    protein_features = {}
-    if conf.data.save_feature:
-        feat_path = conf.output_path + "ProtTrans_repr"
-        os.makedirs(feat_path, exist_ok=True)
-
-    # Load the vocabulary and ProtT5-XL-UniRef50 Model
-    tokenizer = T5Tokenizer.from_pretrained(
-        "Rostlab/prot_t5_xl_uniref50", do_lower_case=False
-    )
-    model = T5EncoderModel.from_pretrained("Rostlab/prot_t5_xl_uniref50")
-    gc.collect()
-
-    # Load the model into CPU/GPU and switch to inference mode
-    model = model.to(device)
-    model = model.eval()
-    batch_size = conf.training.feature_batch_size
-    # Extract feature of one batch each time
-    for i in tqdm(range(0, len(ID_list), batch_size)):
-        if i + batch_size <= len(ID_list):
-            batch_ID_list = ID_list[i : i + batch_size]
-            batch_seq_list = seq_list[i : i + batch_size]
-        else:
-            batch_ID_list = ID_list[i:]
-            batch_seq_list = seq_list[i:]
-
-        # Load sequences and map rarely occured amino acids (U,Z,O,B) to (X)
-        batch_seq_list = [
-            re.sub(r"[UZOB]", "X", " ".join(list(sequence)))
-            for sequence in batch_seq_list
-        ]
-
-        # Tokenize, encode sequences and load it into GPU if avilabile
-        ids = tokenizer.batch_encode_plus(
-            batch_seq_list, add_special_tokens=True, padding=True
-        )
-        input_ids = torch.tensor(ids["input_ids"]).to(device)
-        attention_mask = torch.tensor(ids["attention_mask"]).to(device)
-
-        # Extract sequence features and load it into CPU if needed
-        with torch.no_grad():
-            embedding = model(input_ids=input_ids, attention_mask=attention_mask)
-        embedding = embedding.last_hidden_state.detach().cpu().numpy()
-
-        # Remove padding (\<pad>) and special tokens (\</s>) that is added by ProtT5-XL-UniRef50 model
-        for seq_num in range(len(embedding)):
-            seq_len = (attention_mask[seq_num] == 1).sum()
-            seq_emd = embedding[seq_num][: seq_len - 1]
-            if conf.data.save_feature:
-                np.save(feat_path + "/" + batch_ID_list[seq_num], seq_emd)
-            # Normalization
-            seq_emd = (seq_emd - Min_repr) / (Max_repr - Min_repr)
-            protein_features[batch_ID_list[seq_num]] = seq_emd
-
-    return protein_features
 
 
 def main(conf):
     RANDOM_SEED = int(conf.general.seed)
     torch.manual_seed(RANDOM_SEED)
     torch.cuda.manual_seed(RANDOM_SEED)
-    ID_list, seq_list, label_list = process_train_fasta(
-        conf.data.fasta_path, conf.data.max_seq_len
-    )
     device = (
         torch.device("cuda:{}".format(conf.general.gpu_id))
         if torch.cuda.is_available()
         else "cpu"
     )
+    ID_list, seq_list, label_list = process_train_fasta(
+        conf.data.fasta_path, conf.data.max_seq_len
+    )
+
     logging.info(
         "Feature extraction begins at {}".format(
             datetime.datetime.now().strftime("%m-%d %H:%M")
         )
     )
-
     protein_features = feature_extraction(ID_list, seq_list, conf, device)
 
     logging.info(
@@ -112,21 +45,31 @@ def main(conf):
         )
     )
     logging.info(
-        "raining begins at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
+        "Training begins at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
     )
     pred_dict = {"ID": ID_list, "Sequence": seq_list, "Label": label_list}
     pred_df = pd.DataFrame(pred_dict)
 
-    ion_type = conf.model.ion_type
-    pred_df[ion_type + "_prob"] = 0.0
-    pred_df[ion_type + "_pred"] = 0.0
-
-    train_dataset = MetalDataset(pred_df, protein_features, conf.model.feature_dim)
+    dataset = MetalDataset(pred_df, protein_features, conf.model.feature_dim)
+    n_val = int(len(dataset) * conf.training.val_ratio)
+    n_train = len(dataset) - n_val
+    train_dataset, val_dataset = torch.utils.data.random_split(
+        dataset, [n_train, n_val], generator=torch.Generator().manual_seed(RANDOM_SEED)
+    )
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=conf.training.batch_size,
-        collate_fn=train_dataset.collate_fn,
+        collate_fn=dataset.collate_fn,
         shuffle=True,
+        drop_last=False,
+        pin_memory=True,
+        num_workers=8,
+    )
+    val_dataloader = DataLoader(
+        val_dataset,
+        batch_size=conf.training.batch_size,
+        collate_fn=dataset.collate_fn,
+        shuffle=False,
         drop_last=False,
         pin_memory=True,
         num_workers=8,
@@ -147,38 +90,63 @@ def main(conf):
         lr=conf.training.learning_rate,
         weight_decay=conf.training.weight_decay,
     )
-    loss_func = torch.nn.BCEWithLogitsLoss()
+    loss_func = torch.nn.BCELoss()
+    metric = BinaryAUROC(thresholds=None)
+    log_interval = 4 * conf.training.batch_size
 
-    # Make Predictions
-    prob_col, pred_col = [], []
     for epoch in range(conf.training.epochs):
-        train_loss = 0.0
-        for batch_data in tqdm(train_dataloader):
-            protein_feats, protein_labels, protein_masks, maxlen = batch_data
+        train_loss, train_auc = 0.0, 0.0
+        for i, batch_data in tqdm(enumerate(train_dataloader)):
+            feats, labels, masks, _ = batch_data
             optimizer.zero_grad(set_to_none=True)
-            protein_feats = protein_feats.to(device)
-            protein_masks = protein_masks.to(device)
-            protein_labels = protein_labels.to(device)
-            outputs = model(protein_feats, protein_masks)
-            loss_ = loss_func(outputs, protein_labels)
+            feats = feats.to(device)
+            masks = masks.to(device)
+            labels = labels.to(device)
+            outputs = model(feats, masks).sigmoid()
+            loss_ = loss_func(outputs * masks, labels)
             loss_.backward()
             optimizer.step()
-            outputs = (
-                outputs.detach().cpu().numpy()
-            )  # shape = (pred_bs, len(metal_list) * maxlen)
+            labels = torch.masked_select(labels, masks.bool())
+            outputs = torch.masked_select(outputs, masks.bool())
+            running_auc = metric(outputs, labels).detach().cpu().numpy()
             running_loss = loss_.detach().cpu().numpy()
             train_loss += running_loss
-        #     for j in range(len(outputs)):
-        #         prob = np.round(
-        #             outputs[j, i * maxlen : i * maxlen + protein_masks[j].sum()],
-        #             decimals=4,
-        #         )
-        #         pred = (prob >= LMetalSite_threshold[ion_type]).astype(int)
-        #         prob_col.append(",".join(prob.astype(str).tolist()))
-        #         pred_col.append(",".join(pred.astype(str).tolist()))
+            train_auc += running_auc
+            if i % log_interval == 0 and i > 0:
+                logging.info(
+                    "Running train loss: {:.4f}, auc: {:.3f}".format(
+                        running_loss, running_auc
+                    )
+                )
+        logging.info(
+            "Epoch {} train loss {:.4f}, auc {:.3f}".format(
+                epoch + 1, train_loss / (i + 1), train_auc / (i + 1)
+            )
+        )
+        model.eval()
+        with torch.no_grad():
+            model.training = False
+            val_loss, val_auc = 0.0, 0.0
+            for i, batch_data in tqdm(enumerate(val_dataloader)):
+                feats, labels, masks, _ = batch_data
+                feats = feats.to(device)
+                masks = masks.to(device)
+                labels = labels.to(device)
+                outputs = model(feats, masks).sigmoid()
+                labels = torch.masked_select(labels, masks.bool())
+                outputs = torch.masked_select(outputs, masks.bool())
+                running_auc = metric(outputs, labels).detach().cpu().numpy()
+                running_loss = loss_.detach().cpu().numpy()
+                val_loss += running_loss
+                val_auc += running_auc
 
-        # pred_df[ion_type + "_prob"] = prob_col
-        # pred_df[ion_type + "_pred"] = pred_col
+        validation_loss = val_loss / (i + 1)
+        validation_auc = val_auc / (i + 1)
+        logging.info(
+            "Epoch {} val loss: {:.4f}, auc: {:.3f}\n".format(
+                epoch + 1, validation_loss, validation_auc
+            )
+        )
 
     logging.info(
         "Training is done at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
