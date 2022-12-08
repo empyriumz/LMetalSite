@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import os
-import datetime
 from multiprocessing import cpu_count
 from typing import Mapping, Optional, Sequence, Any
 
