@@ -4,7 +4,8 @@ __pycache__/
 results/
 *.py[cod]
 *$py.class
-
+evoformer_embedding_output/
+datasets/sample_data/
 # C extensions
 *.so
 

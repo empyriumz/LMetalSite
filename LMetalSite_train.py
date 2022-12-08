@@ -15,7 +15,12 @@ from script.utils import (
     logging_related,
     parse_arguments,
 )
-from data.data_process import process_train_fasta, feature_extraction, MetalDataset
+from data.data_process import (
+    process_train_fasta,
+    feature_extraction,
+    calculate_pos_weight,
+    MetalDataset,
+)
 from model.model import LMetalSite
 
 
@@ -37,8 +42,9 @@ def main(conf):
             datetime.datetime.now().strftime("%m-%d %H:%M")
         )
     )
-    protein_features = feature_extraction(ID_list, seq_list, conf, device)
-
+    protein_features = feature_extraction(
+        ID_list, seq_list, conf, device, model_name=conf.model.name
+    )
     logging.info(
         "Feature extraction is done at {}".format(
             datetime.datetime.now().strftime("%m-%d %H:%M")
@@ -90,10 +96,13 @@ def main(conf):
         lr=conf.training.learning_rate,
         weight_decay=conf.training.weight_decay,
     )
-    loss_func = torch.nn.BCELoss()
+    # loss_func = torch.nn.BCELoss()
+    # TODO: pos_weight
+    pos_weight = calculate_pos_weight(label_list)
+    loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight))
     metric = BinaryAUROC(thresholds=None)
     log_interval = 4 * conf.training.batch_size
-
+    model.training = True  # adding Gaussian noise to embedding
     for epoch in range(conf.training.epochs):
         train_loss, train_auc = 0.0, 0.0
         for i, batch_data in tqdm(enumerate(train_dataloader)):
@@ -102,13 +111,13 @@ def main(conf):
             feats = feats.to(device)
             masks = masks.to(device)
             labels = labels.to(device)
-            outputs = model(feats, masks).sigmoid()
+            outputs = model(feats, masks)
             loss_ = loss_func(outputs * masks, labels)
             loss_.backward()
             optimizer.step()
             labels = torch.masked_select(labels, masks.bool())
             outputs = torch.masked_select(outputs, masks.bool())
-            running_auc = metric(outputs, labels).detach().cpu().numpy()
+            running_auc = metric(torch.sigmoid(outputs), labels).detach().cpu().numpy()
             running_loss = loss_.detach().cpu().numpy()
             train_loss += running_loss
             train_auc += running_auc
@@ -132,10 +141,12 @@ def main(conf):
                 feats = feats.to(device)
                 masks = masks.to(device)
                 labels = labels.to(device)
-                outputs = model(feats, masks).sigmoid()
+                outputs = model(feats, masks)
                 labels = torch.masked_select(labels, masks.bool())
                 outputs = torch.masked_select(outputs, masks.bool())
-                running_auc = metric(outputs, labels).detach().cpu().numpy()
+                running_auc = (
+                    metric(torch.sigmoid(outputs), labels).detach().cpu().numpy()
+                )
                 running_loss = loss_.detach().cpu().numpy()
                 val_loss += running_loss
                 val_auc += running_auc

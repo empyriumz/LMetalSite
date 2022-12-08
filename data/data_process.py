@@ -153,22 +153,28 @@ def process_train_fasta(fasta_file, max_input_seq_num):
         raise ValueError("The format of input fasta file is incorrect")
 
 
-Max_repr = np.load("script/ProtTrans_repr_max.npy")
-Min_repr = np.load("script/ProtTrans_repr_min.npy")
-
-
-def feature_extraction(ID_list, seq_list, conf, device):
+def feature_extraction(ID_list, seq_list, conf, device, model_name="ProtTrans"):
+    if model_name == "Evoformer":
+        assert (
+            conf.data.precomputed_feature
+        ), "No online evoformer embedding support yet"
+    if model_name == "ProtTrans":
+        max_repr = np.load("script/ProtTrans_repr_max.npy")
+        min_repr = np.load("script/ProtTrans_repr_min.npy")
+    elif model_name == "Evoformer":
+        max_repr = np.load("script/Evoformer_repr_max.npy")
+        min_repr = np.load("script/Evoformer_repr_min.npy")
     protein_features = {}
     if conf.data.precomputed_feature:
         for id in ID_list:
-            protein_features[id] = np.load(
-                conf.data.precomputed_feature + "/{}.npy".format(id)
-            )
+            seq_emd = np.load(conf.data.precomputed_feature + "/{}.npy".format(id))
+            seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
+            protein_features[id] = seq_emd
 
         return protein_features
 
     if conf.data.save_feature:
-        feat_path = conf.output_path + "/ProtTrans_repr"
+        feat_path = conf.output_path + "/{}_repr".format(model_name)
         os.makedirs(feat_path, exist_ok=True)
 
     # Load the vocabulary and ProtT5-XL-UniRef50 Model
@@ -216,7 +222,18 @@ def feature_extraction(ID_list, seq_list, conf, device):
             if conf.data.save_feature:
                 np.save(feat_path + "/" + batch_ID_list[seq_num], seq_emd)
             # Normalization
-            seq_emd = (seq_emd - Min_repr) / (Max_repr - Min_repr)
+            seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
             protein_features[batch_ID_list[seq_num]] = seq_emd
 
     return protein_features
+
+
+def calculate_pos_weight(label_list):
+    pos_num, neg_num = [], []
+    for label in label_list:
+        pos_ = sum([int(i) for i in label])
+        pos_num.append(pos_)
+        neg_num.append(len(label) - pos_)
+
+    pos_weight = sum(neg_num) / sum(pos_num)
+    return pos_weight

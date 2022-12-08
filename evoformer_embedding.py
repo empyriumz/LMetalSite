@@ -193,7 +193,6 @@ def main(args):
     sorted_targets = list(zip(*(ID_list, seq_list)))
     feature_dicts = {}
     cur_tracing_interval = 0
-    evoformer_embedding = {}
     for tag, seq in sorted_targets:
         feature_dict = feature_dicts.get(tag, None)
         if feature_dict is None:
@@ -238,12 +237,9 @@ def main(args):
         )
         out = run_model(model, processed_feature_dict, tag)
         out = tensor_tree_map(lambda x: np.array(x.cpu()), out)
-        evoformer_embedding[tag] = out["single"]
         if args.save_outputs:
             np.save(args.output_dir + "/" + tag, out["single"])
-
-        return evoformer_embedding
-
+        
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -318,7 +314,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max_seq_len",
         type=int,
-        default=500,
+        default=5000,
         help="""Maximum sequence length""",
     )
     parser.add_argument(
@@ -339,8 +335,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--trace_model",
-        action="store_true",
-        default=False,
+        default=0,
+        type=int,
         help="""Whether to convert parts of each model to TorchScript.
                 Significantly improves runtime at the cost of lengthy
                 'compilation.' Useful for large batch jobs.""",
