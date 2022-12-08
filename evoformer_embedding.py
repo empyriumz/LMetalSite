@@ -18,10 +18,7 @@ import math
 import numpy as np
 import os
 
-from openfold.utils.script_utils import (
-    parse_fasta,
-    run_model,
-)
+from openfold.utils.script_utils import run_model
 from openfold.utils.import_weights import (
     import_evoformer_weights_,
 )
@@ -47,8 +44,8 @@ if torch_major_version > 1 or (torch_major_version == 1 and torch_minor_version 
 torch.set_grad_enabled(False)
 
 from openfold.config import model_config
-from openfold.data import templates, feature_pipeline, data_pipeline
-
+from openfold.data import feature_pipeline, data_pipeline
+from data.data_process import process_train_fasta
 
 from openfold.utils.tensor_utils import (
     tensor_tree_map,
@@ -57,7 +54,7 @@ from openfold.utils.trace_utils import (
     pad_feature_dict_seq,
     trace_model_,
 )
-from script.utils import add_data_args
+from script.utils import add_alphafold_args
 
 
 TRACING_INTERVAL = 50
@@ -102,19 +99,11 @@ def round_up_seqlen(seqlen):
 
 def run_model(model, batch, tag):
     with torch.no_grad():
-        # Temporarily disable templates if there aren't any in the batch
-        template_enabled = model.config.template.enabled
-        model.config.template.enabled = template_enabled and any(
-            ["template_" in k for k in batch]
-        )
-
         logger.info(f"Running inference for {tag}...")
         t = time.perf_counter()
         out = model(batch)
         inference_time = time.perf_counter() - t
         logger.info("Inference time: {:.1f}".format(inference_time))
-
-        model.config.template.enabled = template_enabled
 
     return out
 
@@ -164,144 +153,96 @@ def make_output_directory(output_dir, model_name, multiple_model_mode):
     return prediction_dir
 
 
-def count_models_to_evaluate(openfold_checkpoint_path, jax_param_path):
-    model_count = 0
-    if openfold_checkpoint_path:
-        model_count += len(openfold_checkpoint_path.split(","))
-    if jax_param_path:
-        model_count += len(jax_param_path.split(","))
-    return model_count
-
-
-def list_files_with_extensions(dir, extensions):
-    return [f for f in os.listdir(dir) if f.endswith(extensions)]
-
-
 def main(args):
     # Create the output directory
     os.makedirs(args.output_dir, exist_ok=True)
-    if args.custom_template is None:
-        model_list = ["model_1", "model_2", "model_3", "model_4", "model_5"]
-    else:
-        model_list = ["model_1", "model_2"]
-    model_list = ["model_1"]
-    for model_name in model_list:
-        config = model_config(model_name)
-        model = Evoformer(config)
-        model = model.eval()
-        npz_path = os.path.join(args.jax_param_path, "params_" + model_name + ".npz")
-        import_evoformer_weights_(model, npz_path, version=model_name)
-        model = model.to(args.model_device)
-        if args.trace_model:
-            if not config.data.predict.fixed_size:
-                raise ValueError(
-                    "Tracing requires that fixed_size mode be enabled in the config"
-                )
-        # if args.custom_template is None:
-        #     template_featurizer = templates.TemplateHitFeaturizer(
-        #         mmcif_dir=args.template_mmcif_dir,
-        #         max_template_date=args.max_template_date,
-        #         max_hits=config.data.predict.max_templates,
-        #         kalign_binary_path=args.kalign_binary_path,
-        #         release_dates_path=args.release_dates_path,
-        #         obsolete_pdbs_path=args.obsolete_pdbs_path,
-        #     )
-        # else:
-        #     logger.info("Use custom template")
-        #     template_featurizer = None
+    model_name = args.model_name
+    config = model_config(model_name)
+    model = Evoformer(config)
+    model = model.eval()
+    npz_path = os.path.join(args.jax_param_path, "params_" + model_name + ".npz")
+    import_evoformer_weights_(model, npz_path, version=model_name)
+    model = model.to(args.model_device)
+    if args.trace_model:
+        if not config.data.predict.fixed_size:
+            raise ValueError(
+                "Tracing requires that fixed_size mode be enabled in the config"
+            )
+    template_featurizer = None
+    data_processor = data_pipeline.DataPipeline(
+        template_featurizer=template_featurizer,
+    )
 
-        template_featurizer = None
-        data_processor = data_pipeline.DataPipeline(
-            template_featurizer=template_featurizer,
+    output_dir_base = args.output_dir
+    random_seed = args.data_random_seed
+    if random_seed is None:
+        random_seed = random.randrange(2**32)
+
+    np.random.seed(random_seed)
+    torch.manual_seed(random_seed + 1)
+
+    feature_processor = feature_pipeline.FeaturePipeline(config.data)
+    if not os.path.exists(output_dir_base):
+        os.makedirs(output_dir_base)
+    if args.use_precomputed_alignments is None:
+        alignment_dir = os.path.join(output_dir_base, "alignments")
+    else:
+        alignment_dir = args.use_precomputed_alignments
+
+    ID_list, seq_list, _ = process_train_fasta(args.fasta_dir, args.max_seq_len)
+    sorted_targets = list(zip(*(ID_list, seq_list)))
+    feature_dicts = {}
+    cur_tracing_interval = 0
+    evoformer_embedding = {}
+    for tag, seq in sorted_targets:
+        feature_dict = feature_dicts.get(tag, None)
+        if feature_dict is None:
+            feature_dict = generate_feature_dict(
+                [tag],
+                [seq],
+                alignment_dir,
+                data_processor,
+                args,
+            )
+            if args.trace_model:
+                n = feature_dict["aatype"].shape[-2]
+                rounded_seqlen = round_up_seqlen(n)
+                feature_dict = pad_feature_dict_seq(
+                    feature_dict,
+                    rounded_seqlen,
+                )
+            feature_dicts[tag] = feature_dict
+
+        processed_feature_dict = feature_processor.process_features(
+            feature_dict,
+            mode="predict",
         )
 
-        output_dir_base = args.output_dir
-        random_seed = args.data_random_seed
-        if random_seed is None:
-            random_seed = random.randrange(2**32)
+        processed_feature_dict = {
+            k: torch.as_tensor(v, device=args.model_device)
+            for k, v in processed_feature_dict.items()
+        }
 
-        np.random.seed(random_seed)
-        torch.manual_seed(random_seed + 1)
+        if args.trace_model:
+            if rounded_seqlen > cur_tracing_interval:
+                logger.info(f"Tracing model at {rounded_seqlen} residues...")
+                t = time.perf_counter()
+                trace_model_(model, processed_feature_dict)
+                tracing_time = time.perf_counter() - t
+                logger.info(f"Tracing time: {tracing_time}")
+                cur_tracing_interval = rounded_seqlen
 
-        feature_processor = feature_pipeline.FeaturePipeline(config.data)
-        if not os.path.exists(output_dir_base):
-            os.makedirs(output_dir_base)
-        if args.use_precomputed_alignments is None:
-            alignment_dir = os.path.join(output_dir_base, "alignments")
-        else:
-            alignment_dir = args.use_precomputed_alignments
+        # Toss out the recycling dimensions
+        processed_feature_dict = tensor_tree_map(
+            lambda x: x[..., -1], processed_feature_dict
+        )
+        out = run_model(model, processed_feature_dict, tag)
+        out = tensor_tree_map(lambda x: np.array(x.cpu()), out)
+        evoformer_embedding[tag] = out["single"]
+        if args.save_outputs:
+            np.save(args.output_dir + "/" + tag, out["single"])
 
-        tag_list = []
-        seq_list = []
-        for fasta_file in list_files_with_extensions(args.fasta_dir, (".fasta", ".fa")):
-            # Gather input sequences
-            with open(os.path.join(args.fasta_dir, fasta_file), "r") as fp:
-                data = fp.read()
-
-            tags, seqs = parse_fasta(data)
-            # assert len(tags) == len(set(tags)), "All FASTA tags must be unique"
-            tag = "-".join(tags)
-
-            tag_list.append((tag, tags))
-            seq_list.append(seqs)
-
-        seq_sort_fn = lambda target: sum([len(s) for s in target[1]])
-        sorted_targets = sorted(zip(tag_list, seq_list), key=seq_sort_fn)
-        feature_dicts = {}
-        cur_tracing_interval = 0
-        for (tag, tags), seqs in sorted_targets:
-            # Does nothing if the alignments have already been computed
-            precompute_alignments(tags, seqs, alignment_dir, args)
-
-            feature_dict = feature_dicts.get(tag, None)
-            if feature_dict is None:
-                feature_dict = generate_feature_dict(
-                    tags,
-                    seqs,
-                    alignment_dir,
-                    data_processor,
-                    args,
-                )
-            if args.custom_template is not None:
-                feature_dict = templates.single_template_process(
-                    feature_dict, args.custom_template
-                )
-
-                if args.trace_model:
-                    n = feature_dict["aatype"].shape[-2]
-                    rounded_seqlen = round_up_seqlen(n)
-                    feature_dict = pad_feature_dict_seq(
-                        feature_dict,
-                        rounded_seqlen,
-                    )
-
-                feature_dicts[tag] = feature_dict
-
-            processed_feature_dict = feature_processor.process_features(
-                feature_dict,
-                mode="predict",
-            )
-
-            processed_feature_dict = {
-                k: torch.as_tensor(v, device=args.model_device)
-                for k, v in processed_feature_dict.items()
-            }
-
-            if args.trace_model:
-                if rounded_seqlen > cur_tracing_interval:
-                    logger.info(f"Tracing model at {rounded_seqlen} residues...")
-                    t = time.perf_counter()
-                    trace_model_(model, processed_feature_dict)
-                    tracing_time = time.perf_counter() - t
-                    logger.info(f"Tracing time: {tracing_time}")
-                    cur_tracing_interval = rounded_seqlen
-
-            # Toss out the recycling dimensions
-            processed_feature_dict = tensor_tree_map(
-                lambda x: x[..., -1], processed_feature_dict
-            )
-            out = run_model(model, processed_feature_dict, tag)
-            out = tensor_tree_map(lambda x: np.array(x.cpu()), out)
+        return evoformer_embedding
 
 
 if __name__ == "__main__":
@@ -321,6 +262,12 @@ if __name__ == "__main__":
         default=None,
         help="""Path to alignment directory. If provided, alignment computation 
                 is skipped and database path arguments are ignored.""",
+    )
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        default="model_1",
+        help="""Name of a model config preset defined in openfold/config.py""",
     )
     parser.add_argument(
         "--output_dir",
@@ -357,15 +304,9 @@ if __name__ == "__main__":
              checkpoint directory or a .pt file""",
     )
     parser.add_argument(
-        "--custom_template",
-        type=str,
-        default=None,
-        help="""Using custom template for the inference.""",
-    )
-    parser.add_argument(
         "--save_outputs",
-        action="store_true",
-        default=False,
+        default=0,
+        type=int,
         help="Whether to save all model outputs, including embeddings, etc.",
     )
     parser.add_argument(
@@ -373,6 +314,12 @@ if __name__ == "__main__":
         type=int,
         default=8,
         help="""Number of CPUs with which to run alignment tools""",
+    )
+    parser.add_argument(
+        "--max_seq_len",
+        type=int,
+        default=500,
+        help="""Maximum sequence length""",
     )
     parser.add_argument(
         "--preset", type=str, default="full_dbs", choices=("reduced_dbs", "full_dbs")
@@ -384,11 +331,6 @@ if __name__ == "__main__":
         help="""Postfix for output prediction filenames""",
     )
     parser.add_argument("--data_random_seed", type=str, default=None)
-    parser.add_argument(
-        "--skip_relaxation",
-        action="store_true",
-        default=False,
-    )
     parser.add_argument(
         "--multimer_ri_gap",
         type=int,
@@ -403,14 +345,7 @@ if __name__ == "__main__":
                 Significantly improves runtime at the cost of lengthy
                 'compilation.' Useful for large batch jobs.""",
     )
-    parser.add_argument(
-        "--subtract_plddt",
-        action="store_true",
-        default=False,
-        help=""""Whether to output (100 - pLDDT) in the B-factor column instead
-                 of the pLDDT itself""",
-    )
-    add_data_args(parser)
+    add_alphafold_args(parser)
     args = parser.parse_args()
 
     if args.model_device == "cpu" and torch.cuda.is_available():
