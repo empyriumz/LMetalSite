@@ -2,14 +2,14 @@
     "general": 
         {
          "seed": 1, 
-         "gpu_id": 1, 
+         "gpu_id": 0, 
          "debug": 0
         },
     "data":
         {
-        "fasta_path": "datasets/ZN_Train_1647.fa",
+        "fasta_path": "datasets/MG_Train_1730.fa",
         "max_seq_len": 2000,
-        "precomputed_feature": "evoformer_embedding_output/ZN_train",
+        "precomputed_feature": "evoformer_embedding_output/MG_train",
         "save_feature": 1
         },
     "model": {
@@ -20,7 +20,7 @@
         "num_heads": 8,
         "augment_eps": 0.05,
         "dropout": 0.25,
-        "ion_type": "ZN"
+        "ion_type": "MG"
     },
     "training": 
         {
