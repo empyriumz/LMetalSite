@@ -6,7 +6,10 @@ import gc
 import numpy as np
 from torch.utils.data import Dataset
 from tqdm import tqdm
-from transformers import T5EncoderModel, T5Tokenizer
+try:
+    from transformers import T5EncoderModel, T5Tokenizer
+except:
+    pass
 
 
 class MetalDatasetTest(Dataset):
