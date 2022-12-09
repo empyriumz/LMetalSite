@@ -238,8 +238,12 @@ def main(args):
         out = run_model(model, processed_feature_dict, tag)
         out = tensor_tree_map(lambda x: np.array(x.cpu()), out)
         if args.save_outputs:
-            np.save(args.output_dir + "/" + tag, out["single"])
-        
+            np.savez_compressed(
+                args.output_dir + "/" + tag,
+                single=out["single"],
+                pair=out["pair"][..., 0, :, :],
+            )
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

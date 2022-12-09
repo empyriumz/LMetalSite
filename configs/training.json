@@ -7,8 +7,8 @@
         },
     "data":
         {
-        "fasta_path": "datasets/sample_data/sample_ZN.fa",
-        "max_seq_len": 500,
+        "fasta_path": "datasets/ZN_Train_1647.fa",
+        "max_seq_len": 2000,
         "precomputed_feature": "evoformer_embedding_output/ZN_train",
         "save_feature": 1
         },
@@ -16,10 +16,10 @@
         "name": "Evoformer",
         "feature_dim": 384,
         "hidden_dim": 64,
-        "num_encoder_layers": 2,
-        "num_heads": 4,
+        "num_encoder_layers": 4,
+        "num_heads": 8,
         "augment_eps": 0.05,
-        "dropout": 0.2,
+        "dropout": 0.25,
         "ion_type": "ZN"
     },
     "training": 
@@ -27,8 +27,8 @@
          "learning_rate": 5e-4,
          "val_ratio": 0.2,
          "feature_batch_size": 4,
-         "batch_size": 4,
-         "epochs": 20,
-         "weight_decay": 0
+         "batch_size": 128,
+         "epochs": 30,
+         "weight_decay": 1e-4
         }
 }
