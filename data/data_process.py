@@ -162,12 +162,14 @@ def feature_extraction(ID_list, seq_list, conf, device, model_name="ProtTrans"):
         max_repr = np.load("script/ProtTrans_repr_max.npy")
         min_repr = np.load("script/ProtTrans_repr_min.npy")
     elif model_name == "Evoformer":
-        max_repr = np.load("script/Evoformer_repr_max.npy")
-        min_repr = np.load("script/Evoformer_repr_min.npy")
+        max_repr = np.load("script/Evoformer_pair_repr_max.npy")
+        min_repr = np.load("script/Evoformer_pair_repr_min.npy")
     protein_features = {}
     if conf.data.precomputed_feature:
         for id in ID_list:
-            seq_emd = np.load(conf.data.precomputed_feature + "/{}.npy".format(id))
+            seq_emd = np.load(conf.data.precomputed_feature + "/{}.npz".format(id))
+            if model_name == "Evoformer":
+                seq_emd = seq_emd["pair"]
             seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
             protein_features[id] = seq_emd
 
