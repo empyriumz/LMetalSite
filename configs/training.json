@@ -2,19 +2,19 @@
     "general": 
         {
          "seed": 1, 
-         "gpu_id": 2, 
+         "gpu_id": 1, 
          "debug": 0
         },
     "data":
         {
-        "fasta_path": "datasets/ZN_Train_1647.fa",
+        "data_path": "datasets",
         "max_seq_len": 2000,
-        "precomputed_feature": "evoformer_embedding_output/ZN_pair_rep",
+        "precomputed_feature": "evoformer_embedding_output",
         "save_feature": 1
         },
     "model": {
         "name": "Evoformer",
-        "feature_dim": 128,
+        "feature_dim": 384,
         "hidden_dim": 64,
         "num_encoder_layers": 2,
         "num_heads": 4,
@@ -28,7 +28,7 @@
          "val_ratio": 0.2,
          "feature_batch_size": 4,
          "batch_size": 64,
-         "epochs": 30,
+         "epochs": 10,
          "weight_decay": 1e-4
         }
 }

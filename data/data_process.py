@@ -3,8 +3,10 @@ import re
 import torch
 import os
 import gc
+import logging
 import numpy as np
-from torch.utils.data import Dataset
+import pandas as pd
+from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from transformers import T5EncoderModel, T5Tokenizer
 
@@ -153,7 +155,9 @@ def process_train_fasta(fasta_file, max_input_seq_num):
         raise ValueError("The format of input fasta file is incorrect")
 
 
-def feature_extraction(ID_list, seq_list, conf, device, model_name="ProtTrans"):
+def feature_extraction(
+    ID_list, seq_list, conf, device, ion_type="ZN", model_name="ProtTrans"
+):
     if model_name == "Evoformer":
         assert (
             conf.data.precomputed_feature
@@ -162,14 +166,17 @@ def feature_extraction(ID_list, seq_list, conf, device, model_name="ProtTrans"):
         max_repr = np.load("script/ProtTrans_repr_max.npy")
         min_repr = np.load("script/ProtTrans_repr_min.npy")
     elif model_name == "Evoformer":
-        max_repr = np.load("script/Evoformer_pair_repr_max.npy")
-        min_repr = np.load("script/Evoformer_pair_repr_min.npy")
+        max_repr = np.load("script/Evoformer_repr_max.npy")
+        min_repr = np.load("script/Evoformer_repr_min.npy")
     protein_features = {}
     if conf.data.precomputed_feature:
         for id in ID_list:
-            seq_emd = np.load(conf.data.precomputed_feature + "/{}.npz".format(id))
+            seq_emd = np.load(
+                conf.data.precomputed_feature
+                + "/{}_pair_rep/{}.npz".format(ion_type, id)
+            )
             if model_name == "Evoformer":
-                seq_emd = seq_emd["pair"]
+                seq_emd = seq_emd["single"]
             seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
             protein_features[id] = seq_emd
 
@@ -239,3 +246,48 @@ def calculate_pos_weight(label_list):
 
     pos_weight = sum(neg_num) / sum(pos_num)
     return pos_weight
+
+
+def data_loader(conf, device, random_seed=0, ion_type="ZN"):
+    fasta_path = conf.data.data_path + "/{}_train.fa".format(ion_type)
+    ID_list, seq_list, label_list = process_train_fasta(
+        fasta_path, conf.data.max_seq_len
+    )
+    protein_features = feature_extraction(
+        ID_list, seq_list, conf, device, ion_type=ion_type, model_name=conf.model.name
+    )
+    pred_dict = {"ID": ID_list, "Sequence": seq_list, "Label": label_list}
+    pred_df = pd.DataFrame(pred_dict)
+    pos_weight = calculate_pos_weight(label_list)
+
+    dataset = MetalDataset(pred_df, protein_features, conf.model.feature_dim)
+    n_val = int(len(dataset) * conf.training.val_ratio)
+    n_train = len(dataset) - n_val
+    train_dataset, val_dataset = torch.utils.data.random_split(
+        dataset, [n_train, n_val], generator=torch.Generator().manual_seed(random_seed)
+    )
+    logging.info(
+        "Training sequences for {}: {}; validation sequences {}".format(
+            ion_type, len(train_dataset), len(val_dataset)
+        )
+    )
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=conf.training.batch_size,
+        collate_fn=dataset.collate_fn,
+        shuffle=True,
+        drop_last=False,
+        pin_memory=True,
+        num_workers=8,
+    )
+    val_dataloader = DataLoader(
+        val_dataset,
+        batch_size=conf.training.batch_size,
+        collate_fn=dataset.collate_fn,
+        shuffle=False,
+        drop_last=True,
+        pin_memory=True,
+        num_workers=8,
+    )
+
+    return train_dataloader, val_dataloader, pos_weight
