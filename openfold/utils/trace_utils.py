@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import contextlib
-from functools import partialmethod
 
 import numpy as np
 import torch
@@ -65,20 +64,19 @@ def trace_model_(model, sample_input):
     # Gather some metadata
     n = feats["aatype"].shape[-1]
     msa_depth = feats["true_msa"].shape[-2]
-    extra_msa_depth = feats["extra_msa"].shape[-2]
-    no_templates = feats["template_aatype"].shape[-2]
+    # no_templates = feats["template_aatype"].shape[-2]
     device = feats["aatype"].device
 
     seq_mask = feats["seq_mask"].to(device)
     pair_mask = seq_mask[..., None] * seq_mask[..., None, :]
-    extra_msa_mask = feats["extra_msa_mask"].to(device)
-    template_pair_mask = torch.stack([pair_mask] * no_templates, dim=-3)
+    # extra_msa_mask = feats["extra_msa_mask"].to(device)
+    # template_pair_mask = torch.stack([pair_mask] * no_templates, dim=-3)
 
     # Create some fake representations with the correct shapes
     m = torch.rand(msa_depth + 4, n, model.globals.c_m).to(device)
     z = torch.rand(n, n, model.globals.c_z).to(device)
-    t = torch.rand(no_templates, n, n, model.globals.c_t).to(device)
-    a = torch.rand(extra_msa_depth, n, model.globals.c_e).to(device)
+    # t = torch.rand(no_templates, n, n, model.globals.c_t).to(device)
+    # a = torch.rand(extra_msa_depth, n, model.globals.c_e).to(device)
     msa_mask = torch.randint(0, 1, (msa_depth + 4, n)).to(device)
 
     # We need to do a dry run through the model so the chunk size tuners'
@@ -125,17 +123,6 @@ def trace_model_(model, sample_input):
     evoformer_chunk_size = model.globals.chunk_size
     if model.evoformer.chunk_size_tuner is not None:
         evoformer_chunk_size = get_tuned_chunk_size(model.evoformer)
-
-    extra_msa_chunk_size = model.globals.chunk_size
-    if model.extra_msa_stack.chunk_size_tuner is not None:
-        extra_msa_chunk_size = get_tuned_chunk_size(model.extra_msa_stack)
-
-    if model.template_config.enabled:
-        template_pair_stack_chunk_size = model.globals.chunk_size
-        if model.template_pair_stack.chunk_size_tuner is not None:
-            template_pair_stack_chunk_size = get_tuned_chunk_size(
-                model.template_pair_stack
-            )
 
     def trace_block(block, block_inputs):
         # Yes, yes, I know

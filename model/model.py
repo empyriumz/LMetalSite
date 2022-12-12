@@ -254,7 +254,8 @@ class LMetalSite(nn.Module):
             logits = self.MG_head(h_V).squeeze(-1)
 
         return logits
-    
+
+
 class LMetalSiteFineTune(nn.Module):
     def __init__(
         self,

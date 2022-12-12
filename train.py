@@ -20,7 +20,7 @@ from script.utils import (
 from data.data_process import data_loader
 from model.model import LMetalSite
 
-# TODO: combine embedding from prottrans and evoformer
+
 def main(conf):
     RANDOM_SEED = int(conf.general.seed)
     torch.manual_seed(RANDOM_SEED)

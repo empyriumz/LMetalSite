@@ -18,11 +18,11 @@ import math
 import numpy as np
 import os
 
-from openfold.utils.script_utils import run_model
+from openfold.utils.script_utils import parse_fasta, run_model
 from openfold.utils.import_weights import (
-    import_evoformer_weights_,
+    import_jax_weights_,
 )
-from openfold.model.evoformer_inference import Evoformer
+from openfold.model.model import AlphaFold
 
 logging.basicConfig()
 logger = logging.getLogger(__file__)
@@ -44,8 +44,8 @@ if torch_major_version > 1 or (torch_major_version == 1 and torch_minor_version 
 torch.set_grad_enabled(False)
 
 from openfold.config import model_config
-from openfold.data import feature_pipeline, data_pipeline_sequence_only
-from data.data_process import process_train_fasta
+from openfold.data import templates, feature_pipeline, data_pipeline
+
 
 from openfold.utils.tensor_utils import (
     tensor_tree_map,
@@ -60,17 +60,58 @@ from script.utils import add_alphafold_args
 TRACING_INTERVAL = 50
 
 
+def precompute_alignments(tags, seqs, alignment_dir, args):
+    for tag, seq in zip(tags, seqs):
+        tmp_fasta_path = os.path.join(args.output_dir, f"tmp_{os.getpid()}.fasta")
+        with open(tmp_fasta_path, "w") as fp:
+            fp.write(f">{tag}\n{seq}")
+
+        local_alignment_dir = os.path.join(alignment_dir, tag)
+        if args.use_precomputed_alignments is None and not os.path.isdir(
+            local_alignment_dir
+        ):
+            logger.info(f"Generating alignments for {tag}...")
+
+            os.makedirs(local_alignment_dir)
+
+            alignment_runner = data_pipeline.AlignmentRunner(
+                jackhmmer_binary_path=args.jackhmmer_binary_path,
+                hhblits_binary_path=args.hhblits_binary_path,
+                hhsearch_binary_path=args.hhsearch_binary_path,
+                uniref90_database_path=args.uniref90_database_path,
+                mgnify_database_path=args.mgnify_database_path,
+                bfd_database_path=args.bfd_database_path,
+                uniclust30_database_path=args.uniclust30_database_path,
+                pdb70_database_path=args.pdb70_database_path,
+                no_cpus=args.cpus,
+            )
+            alignment_runner.run(tmp_fasta_path, local_alignment_dir)
+        else:
+            logger.info(f"Using precomputed alignments for {tag} at {alignment_dir}...")
+
+        # Remove temporary FASTA file
+        os.remove(tmp_fasta_path)
+
+
 def round_up_seqlen(seqlen):
     return int(math.ceil(seqlen / TRACING_INTERVAL)) * TRACING_INTERVAL
 
 
-def run_model(model, batch, tag):
+def run_model(model, batch, tag, args):
     with torch.no_grad():
+        # Temporarily disable templates if there aren't any in the batch
+        template_enabled = model.config.template.enabled
+        model.config.template.enabled = template_enabled and any(
+            ["template_" in k for k in batch]
+        )
+
         logger.info(f"Running inference for {tag}...")
         t = time.perf_counter()
         out = model(batch)
         inference_time = time.perf_counter() - t
         logger.info("Inference time: {:.1f}".format(inference_time))
+
+        model.config.template.enabled = template_enabled
 
     return out
 
@@ -120,23 +161,38 @@ def make_output_directory(output_dir, model_name, multiple_model_mode):
     return prediction_dir
 
 
+def count_models_to_evaluate(openfold_checkpoint_path, jax_param_path):
+    model_count = 0
+    if openfold_checkpoint_path:
+        model_count += len(openfold_checkpoint_path.split(","))
+    if jax_param_path:
+        model_count += len(jax_param_path.split(","))
+    return model_count
+
+
+def list_files_with_extensions(dir, extensions):
+    return [f for f in os.listdir(dir) if f.endswith(extensions)]
+
+
 def main(args):
     # Create the output directory
     os.makedirs(args.output_dir, exist_ok=True)
-    model_name = args.model_name
+    model_name = "model_3"
+
     config = model_config(model_name)
-    model = Evoformer(config)
+    model = AlphaFold(config)
     model = model.eval()
     npz_path = os.path.join(args.jax_param_path, "params_" + model_name + ".npz")
-    import_evoformer_weights_(model, npz_path, version=model_name)
+    import_jax_weights_(model, npz_path, version=model_name)
     model = model.to(args.model_device)
     if args.trace_model:
         if not config.data.predict.fixed_size:
             raise ValueError(
                 "Tracing requires that fixed_size mode be enabled in the config"
             )
+
     template_featurizer = None
-    data_processor = data_pipeline_sequence_only.DataPipeline(
+    data_processor = data_pipeline.DataPipeline(
         template_featurizer=template_featurizer,
     )
 
@@ -156,20 +212,38 @@ def main(args):
     else:
         alignment_dir = args.use_precomputed_alignments
 
-    ID_list, seq_list, _ = process_train_fasta(args.fasta_dir, args.max_seq_len)
-    sorted_targets = list(zip(*(ID_list, seq_list)))
+    tag_list = []
+    seq_list = []
+    for fasta_file in list_files_with_extensions(args.fasta_dir, (".fasta", ".fa")):
+        # Gather input sequences
+        with open(os.path.join(args.fasta_dir, fasta_file), "r") as fp:
+            data = fp.read()
+
+        tags, seqs = parse_fasta(data)
+        # assert len(tags) == len(set(tags)), "All FASTA tags must be unique"
+        tag = "-".join(tags)
+
+        tag_list.append((tag, tags))
+        seq_list.append(seqs)
+
+    seq_sort_fn = lambda target: sum([len(s) for s in target[1]])
+    sorted_targets = sorted(zip(tag_list, seq_list), key=seq_sort_fn)
     feature_dicts = {}
     cur_tracing_interval = 0
-    for tag, seq in sorted_targets:
+    for (tag, tags), seqs in sorted_targets:
+        # Does nothing if the alignments have already been computed
+        precompute_alignments(tags, seqs, alignment_dir, args)
+
         feature_dict = feature_dicts.get(tag, None)
         if feature_dict is None:
             feature_dict = generate_feature_dict(
-                [tag],
-                [seq],
+                tags,
+                seqs,
                 alignment_dir,
                 data_processor,
                 args,
             )
+
             if args.trace_model:
                 n = feature_dict["aatype"].shape[-2]
                 rounded_seqlen = round_up_seqlen(n)
@@ -177,6 +251,7 @@ def main(args):
                     feature_dict,
                     rounded_seqlen,
                 )
+
             feature_dicts[tag] = feature_dict
 
         processed_feature_dict = feature_processor.process_features(
@@ -198,12 +273,14 @@ def main(args):
                 logger.info(f"Tracing time: {tracing_time}")
                 cur_tracing_interval = rounded_seqlen
 
-        # Toss out the recycling dimensions
+        out = run_model(model, processed_feature_dict, tag, args.output_dir)
+
+        # Toss out the recycling dimensions --- we don't need them anymore
         processed_feature_dict = tensor_tree_map(
-            lambda x: x[..., -1], processed_feature_dict
+            lambda x: np.array(x[..., -1].cpu()), processed_feature_dict
         )
-        out = run_model(model, processed_feature_dict, tag)
         out = tensor_tree_map(lambda x: np.array(x.cpu()), out)
+
         if args.save_outputs:
             np.savez_compressed(
                 args.output_dir + "/" + tag,
@@ -229,12 +306,6 @@ if __name__ == "__main__":
         default=None,
         help="""Path to alignment directory. If provided, alignment computation 
                 is skipped and database path arguments are ignored.""",
-    )
-    parser.add_argument(
-        "--model_name",
-        type=str,
-        default="model_1",
-        help="""Name of a model config preset defined in openfold/config.py""",
     )
     parser.add_argument(
         "--output_dir",
@@ -272,8 +343,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--save_outputs",
-        default=0,
         type=int,
+        default=0,
         help="Whether to save all model outputs, including embeddings, etc.",
     )
     parser.add_argument(
@@ -281,12 +352,6 @@ if __name__ == "__main__":
         type=int,
         default=8,
         help="""Number of CPUs with which to run alignment tools""",
-    )
-    parser.add_argument(
-        "--max_seq_len",
-        type=int,
-        default=5000,
-        help="""Maximum sequence length""",
     )
     parser.add_argument(
         "--preset", type=str, default="full_dbs", choices=("reduced_dbs", "full_dbs")
