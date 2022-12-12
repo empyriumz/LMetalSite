@@ -4,7 +4,9 @@ __pycache__/
 results/
 *.py[cod]
 *$py.class
-evoformer_embedding_output/
+precomputed_embedding/
+metal_ion_alignments/
+datasets/mg_train_1/
 datasets/sample_data/
 # C extensions
 *.so

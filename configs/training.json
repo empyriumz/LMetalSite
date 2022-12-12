@@ -13,9 +13,9 @@
         "save_feature": 1
         },
     "model": {
-        "name": "Evoformer",
-        "feature_dim": 128,
-        "hidden_dim": 64,
+        "name": "composite",
+        "feature_dim": 1408,
+        "hidden_dim": 128,
         "num_encoder_layers": 2,
         "num_heads": 4,
         "augment_eps": 0.05,
@@ -28,7 +28,7 @@
          "val_ratio": 0.2,
          "feature_batch_size": 4,
          "batch_size": 64,
-         "epochs": 30,
+         "epochs": 10,
          "weight_decay": 1e-4
         }
 }
