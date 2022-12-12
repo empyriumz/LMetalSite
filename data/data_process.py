@@ -228,8 +228,8 @@ def prottrans_embedding(ID_list, seq_list, conf, device, ion_type="ZN"):
 
 def load_evoformer_embedding(ID_list, precomputed_feature_path, ion_type="ZN"):
     protein_features = {}
-    max_repr = np.load("/host/LMetalSite/script/Evoformer_repr_max.npy")
-    min_repr = np.load("/host/LMetalSite/script/Evoformer_repr_min.npy")
+    max_repr = np.load("script/Evoformer_repr_max.npy")
+    min_repr = np.load("script/Evoformer_repr_min.npy")
     for id in ID_list:
         feature = np.load(
             precomputed_feature_path + "/{}_pair_rep/{}.npz".format(ion_type, id)
@@ -241,6 +241,27 @@ def load_evoformer_embedding(ID_list, precomputed_feature_path, ion_type="ZN"):
 
     return protein_features
 
+def composite_embedding(ID_list, precomputed_feature_path, ion_type="ZN"):
+    max_repr_evo = np.load("script/Evoformer_repr_max.npy")
+    min_repr_evo = np.load("script/Evoformer_repr_min.npy")
+    max_repr_prot = np.load("script/ProtTrans_repr_max.npy")
+    min_repr_prot = np.load("script/ProtTrans_repr_min.npy")
+    min_repr = np.concatenate((min_repr_prot, min_repr_evo))
+    max_repr = np.concatenate((max_repr_prot, max_repr_evo))
+    protein_features = {}
+    for id in ID_list:
+        feature_evo = np.load(
+            precomputed_feature_path + "/{}_pair_rep/{}.npz".format(ion_type, id)
+        )
+        feature_prot = np.load(
+                precomputed_feature_path
+                + "/{}_prottrans_rep/{}.npy".format(ion_type, id)
+            )
+        seq_emd = np.concatenate((feature_prot, feature_evo["single"]), axis=1)
+        seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
+        protein_features[id] = seq_emd
+
+    return protein_features
 
 def feature_extraction(
     ID_list, seq_list, conf, device, ion_type="ZN", model_name="ProtTrans"
@@ -255,6 +276,10 @@ def feature_extraction(
     elif model_name == "ProtTrans":
         protein_features = prottrans_embedding(
             ID_list, seq_list, conf, device, ion_type=ion_type
+        )
+    elif model_name == "composite":
+        protein_features = composite_embedding(
+            ID_list, conf.data.precomputed_feature, ion_type=ion_type
         )
 
     return protein_features
@@ -290,7 +315,7 @@ def data_loader(conf, device, random_seed=0, ion_type="ZN"):
         dataset, [n_train, n_val], generator=torch.Generator().manual_seed(random_seed)
     )
     logging.info(
-        "Training sequences for {}: {}; validation sequences {}".format(
+        "\nTraining sequences for {}: {}; validation sequences {}".format(
             ion_type, len(train_dataset), len(val_dataset)
         )
     )
