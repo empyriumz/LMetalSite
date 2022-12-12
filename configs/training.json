@@ -9,12 +9,12 @@
         {
         "data_path": "datasets",
         "max_seq_len": 2000,
-        "precomputed_feature": "evoformer_embedding_output",
+        "precomputed_feature": 0,
         "save_feature": 1
         },
     "model": {
-        "name": "Evoformer",
-        "feature_dim": 384,
+        "name": "ProtTrans",
+        "feature_dim": 1024,
         "hidden_dim": 64,
         "num_encoder_layers": 2,
         "num_heads": 4,

@@ -155,35 +155,24 @@ def process_train_fasta(fasta_file, max_input_seq_num):
         raise ValueError("The format of input fasta file is incorrect")
 
 
-def feature_extraction(
-    ID_list, seq_list, conf, device, ion_type="ZN", model_name="ProtTrans"
-):
-    if model_name == "Evoformer":
-        assert (
-            conf.data.precomputed_feature
-        ), "No online evoformer embedding support yet"
-    if model_name == "ProtTrans":
-        max_repr = np.load("script/ProtTrans_repr_max.npy")
-        min_repr = np.load("script/ProtTrans_repr_min.npy")
-    elif model_name == "Evoformer":
-        max_repr = np.load("script/Evoformer_repr_max.npy")
-        min_repr = np.load("script/Evoformer_repr_min.npy")
+def prottrans_embedding(ID_list, seq_list, conf, device, ion_type="ZN"):
     protein_features = {}
+    max_repr = np.load("script/ProtTrans_repr_max.npy")
+    min_repr = np.load("script/ProtTrans_repr_min.npy")
     if conf.data.precomputed_feature:
         for id in ID_list:
             seq_emd = np.load(
                 conf.data.precomputed_feature
-                + "/{}_pair_rep/{}.npz".format(ion_type, id)
+                + "/{}_prottrans_rep/{}.npy".format(ion_type, id)
             )
-            if model_name == "Evoformer":
-                seq_emd = seq_emd["single"]
+
             seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
             protein_features[id] = seq_emd
 
         return protein_features
 
     if conf.data.save_feature:
-        feat_path = conf.output_path + "/{}_repr".format(model_name)
+        feat_path = conf.output_path + "/{}_prottrans_rep".format(ion_type)
         os.makedirs(feat_path, exist_ok=True)
 
     # Load the vocabulary and ProtT5-XL-UniRef50 Model
@@ -233,6 +222,40 @@ def feature_extraction(
             # Normalization
             seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
             protein_features[batch_ID_list[seq_num]] = seq_emd
+
+    return protein_features
+
+
+def load_evoformer_embedding(ID_list, precomputed_feature_path, ion_type="ZN"):
+    protein_features = {}
+    max_repr = np.load("/host/LMetalSite/script/Evoformer_repr_max.npy")
+    min_repr = np.load("/host/LMetalSite/script/Evoformer_repr_min.npy")
+    for id in ID_list:
+        feature = np.load(
+            precomputed_feature_path + "/{}_pair_rep/{}.npz".format(ion_type, id)
+        )
+        # seq_emd = np.concatenate((feature["single"], feature["pair"]), axis=1)
+        seq_emd = feature["single"]
+        seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
+        protein_features[id] = seq_emd
+
+    return protein_features
+
+
+def feature_extraction(
+    ID_list, seq_list, conf, device, ion_type="ZN", model_name="ProtTrans"
+):
+    if model_name == "Evoformer":
+        assert (
+            conf.data.precomputed_feature
+        ), "No online evoformer embedding support yet"
+        protein_features = load_evoformer_embedding(
+            ID_list, conf.data.precomputed_feature, ion_type=ion_type
+        )
+    elif model_name == "ProtTrans":
+        protein_features = prottrans_embedding(
+            ID_list, seq_list, conf, device, ion_type=ion_type
+        )
 
     return protein_features
 

@@ -20,7 +20,7 @@ from script.utils import (
 from data.data_process import data_loader
 from model.model import LMetalSite
 
-
+# TODO: combine embedding from prottrans and evoformer
 def main(conf):
     RANDOM_SEED = int(conf.general.seed)
     torch.manual_seed(RANDOM_SEED)
@@ -56,7 +56,7 @@ def main(conf):
     metric_auprc = BinaryAveragePrecision(thresholds=None)
     log_interval = 2 * conf.training.batch_size
     model.training = True  # adding Gaussian noise to embedding
-    for ion in ["ZN", "CA", "MN"]:
+    for ion in ["ZN", "CA", "MN", "MG"]:
         train_dataloader, val_dataloader, pos_weight = data_loader(
             conf, device, random_seed=RANDOM_SEED, ion_type=ion
         )
