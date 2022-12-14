@@ -163,7 +163,7 @@ def prottrans_embedding(ID_list, seq_list, conf, device, ion_type="ZN"):
         for id in ID_list:
             seq_emd = np.load(
                 conf.data.precomputed_feature
-                + "/{}_prottrans_rep/{}.npy".format(ion_type, id)
+                + "/{}_ProtTrans/{}.npy".format(ion_type, id)
             )
 
             seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
@@ -172,7 +172,7 @@ def prottrans_embedding(ID_list, seq_list, conf, device, ion_type="ZN"):
         return protein_features
 
     if conf.data.save_feature:
-        feat_path = conf.output_path + "/{}_prottrans_rep".format(ion_type)
+        feat_path = conf.output_path + "/{}_ProtTrans".format(ion_type)
         os.makedirs(feat_path, exist_ok=True)
 
     # Load the vocabulary and ProtT5-XL-UniRef50 Model
@@ -230,16 +230,20 @@ def load_evoformer_embedding(ID_list, precomputed_feature_path, ion_type="ZN"):
     protein_features = {}
     max_repr = np.load("script/Evoformer_repr_max.npy")
     min_repr = np.load("script/Evoformer_repr_min.npy")
+    # max_repr = np.load("script/Evoformer_pair_repr_max.npy")
+    # min_repr = np.load("script/Evoformer_pair_repr_min.npy")
     for id in ID_list:
         feature = np.load(
-            precomputed_feature_path + "/{}_pair_rep/{}.npz".format(ion_type, id)
+            precomputed_feature_path + "/{}_Evoformer/{}.npz".format(ion_type, id)
         )
         # seq_emd = np.concatenate((feature["single"], feature["pair"]), axis=1)
         seq_emd = feature["single"]
+        # seq_emd = feature["pair"]
         seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
         protein_features[id] = seq_emd
 
     return protein_features
+
 
 def composite_embedding(ID_list, precomputed_feature_path, ion_type="ZN"):
     max_repr_evo = np.load("script/Evoformer_repr_max.npy")
@@ -251,25 +255,26 @@ def composite_embedding(ID_list, precomputed_feature_path, ion_type="ZN"):
     protein_features = {}
     for id in ID_list:
         feature_evo = np.load(
-            precomputed_feature_path + "/{}_pair_rep/{}.npz".format(ion_type, id)
+            precomputed_feature_path + "/{}_Evoformer/{}.npz".format(ion_type, id)
         )
         feature_prot = np.load(
-                precomputed_feature_path
-                + "/{}_prottrans_rep/{}.npy".format(ion_type, id)
-            )
+            precomputed_feature_path + "/{}_ProtTrans/{}.npy".format(ion_type, id)
+        )
         seq_emd = np.concatenate((feature_prot, feature_evo["single"]), axis=1)
         seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
         protein_features[id] = seq_emd
 
     return protein_features
 
+
 def feature_extraction(
     ID_list, seq_list, conf, device, ion_type="ZN", model_name="ProtTrans"
 ):
+    assert model_name in ["Evoformer", "Composite", "ProtTrans"], "Invalid model name"
     if model_name == "Evoformer":
         assert (
             conf.data.precomputed_feature
-        ), "No online evoformer embedding support yet"
+        ), "No online Evoformer embedding support yet"
         protein_features = load_evoformer_embedding(
             ID_list, conf.data.precomputed_feature, ion_type=ion_type
         )
@@ -277,7 +282,7 @@ def feature_extraction(
         protein_features = prottrans_embedding(
             ID_list, seq_list, conf, device, ion_type=ion_type
         )
-    elif model_name == "composite":
+    elif model_name == "Composite":
         protein_features = composite_embedding(
             ID_list, conf.data.precomputed_feature, ion_type=ion_type
         )
@@ -346,7 +351,7 @@ def data_loader_finetune(conf, device, random_seed=0, ion_type="ZN"):
     ID_list, seq_list, label_list = process_train_fasta(
         fasta_path, conf.data.max_seq_len
     )
-        # Load the vocabulary and ProtT5-XL-UniRef50 Model
+    # Load the vocabulary and ProtT5-XL-UniRef50 Model
     tokenizer = T5Tokenizer.from_pretrained(
         "Rostlab/prot_t5_xl_uniref50", do_lower_case=False
     )

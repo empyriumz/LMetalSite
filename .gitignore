@@ -5,9 +5,9 @@ results/
 *.py[cod]
 *$py.class
 precomputed_embedding/
-metal_ion_alignments/
-datasets/mg_train_1/
-datasets/sample_data/
+precomputed_alignment/
+datasets/
+evoformer_embedding/
 # C extensions
 *.so
 
