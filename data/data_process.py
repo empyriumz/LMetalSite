@@ -96,6 +96,21 @@ class MetalDataset(Dataset):
         return protein_feat, protein_label, protein_mask, maxlen
 
 
+class FineTuneDataset(Dataset):
+    def __init__(self, ID_list, seq_list, label_list, tokenizer):
+        self.ID_list = ID_list
+        self.seq_list = seq_list
+        self.label_list = label_list
+        self.tokenizer = tokenizer
+
+    def __len__(self):
+        return len(self.ID_list)
+
+    def __getitem__(self, idx):
+        batch_labels, _, batch_tokens = self.tokenizer([self.data[idx]])
+        return batch_tokens[0], batch_labels[0]
+
+
 def process_fasta(fasta_file, max_input_seq_num):
     ID_list = []
     seq_list = []
@@ -344,3 +359,15 @@ def data_loader(conf, device, random_seed=0, ion_type="ZN"):
     )
 
     return train_dataloader, val_dataloader, pos_weight
+
+
+def padding(batch, maxlen):
+    batch_list = []
+    for label in batch:
+        protein_label = [int(i) for i in label]
+        padded_list = np.zeros(maxlen)
+        padded_list[: len(protein_label)] = protein_label
+        padded_list = torch.tensor(padded_list, dtype=torch.float)
+        batch_list.append(padded_list)
+
+    return torch.stack(batch_list)

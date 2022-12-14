@@ -17,7 +17,7 @@ from torchmetrics.classification import (
     BinaryAUROC,
     BinaryAveragePrecision,
 )
-from data.data_process import process_train_fasta, calculate_pos_weight
+from data.data_process import process_train_fasta, padding, calculate_pos_weight
 from model.finetune_model import MetalIonSiteClassification
 
 
@@ -39,7 +39,7 @@ def train(conf):
         "Rostlab/prot_t5_xl_uniref50", do_lower_case=False
     )
 
-    model = MetalIonSiteClassification(backbone_model, conf)
+    model = MetalIonSiteClassification(backbone_model, conf).to(device)
     if conf.training.fix_backbone_weight:
         optimizer = torch.optim.AdamW(
             model.parameters(),
@@ -49,8 +49,7 @@ def train(conf):
     else:
         optimizer = torch.optim.AdamW(
             [
-                {"params": model.encoder.parameters()},
-                {"params": model.decoder.parameters()},
+                {"params": model.classifier.parameters()},
                 {
                     "params": model.backbone.parameters(),
                     "lr": conf.training.backbone_learning_rate,
@@ -63,6 +62,7 @@ def train(conf):
     metric_auc = BinaryAUROC(thresholds=None)
     metric_auprc = BinaryAveragePrecision(thresholds=None)
     for ion in ["CA"]:
+        model.ion_type = ion
         fasta_path = conf.data.data_path + "/{}_train.fa".format(ion)
         ID_list, seq_list, label_list = process_train_fasta(
             fasta_path, conf.data.max_seq_len
@@ -75,24 +75,25 @@ def train(conf):
         #     "Total train samples {}, val samples {}".format(len(train_data), len(val_data))
         # )
         for epoch in range(conf.training.epochs):
-            train_loss = 0
+            train_loss, train_auc, train_auprc = 0.0, 0.0, 0.0
             model.train()
             for i, j in tqdm(enumerate(range(0, len(ID_list), batch_size))):
                 batch_seq_list = seq_list[j : j + batch_size]
+                batch_label_list = label_list[j : j + batch_size]
                 # Load sequences and map rarely occurred amino acids (U,Z,O,B) to (X)
                 batch_seq_list = [
                     re.sub(r"[UZOB]", "X", " ".join(list(sequence)))
                     for sequence in batch_seq_list
                 ]
+                optimizer.zero_grad(set_to_none=True)
                 ids = tokenizer.batch_encode_plus(
                     batch_seq_list, add_special_tokens=True, padding=True
                 )
                 input_ids = torch.tensor(ids["input_ids"]).to(device)
                 masks = torch.tensor(ids["attention_mask"]).to(device)
-                labels = torch.tensor(label_list).to(device)
+                labels = padding(batch_label_list, input_ids.size(1)).to(device)
                 outputs = model(input_ids=input_ids, attention_mask=masks)
                 loss_ = loss_func(outputs * masks, labels)
-                optimizer.zero_grad(set_to_none=True)
                 loss_.backward()
                 optimizer.step()
                 running_loss = loss_.detach().cpu().numpy()
@@ -104,13 +105,17 @@ def train(conf):
                 train_auc += running_auc.detach().cpu().numpy()
                 train_auprc += running_auprc.detach().cpu().numpy()
 
-                if i % log_interval == 0 and i > 0:
+                if i % log_interval == 0:
                     logging.info("Running train loss: {:.4f}".format(running_loss))
 
             logging.info(
-                "Epoch {} train loss: {:.4f}".format(epoch + 1, train_loss / (i + 1))
+                "Epoch {} train loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
+                    epoch + 1,
+                    train_loss / (i + 1),
+                    train_auc / (i + 1),
+                    train_auprc / (i + 1),
+                )
             )
-
             # model.eval()
             # with torch.no_grad():
             #     val_loss = 0.0
@@ -152,7 +157,7 @@ if __name__ == "__main__":
     logging related part
     """
     logging_related(output_path)
-    train(conf)
 
+    train(conf)
     end = timer()
     logging.info("Total time used: {:.1f}".format(end - start))
