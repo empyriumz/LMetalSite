@@ -27,7 +27,7 @@
          "val_ratio": 0.25,
          "feature_batch_size": 4,
          "batch_size": 64,
-         "epochs": 20,
-         "weight_decay": 5e-4
+         "epochs": 15,
+         "weight_decay": 1e-2
         }
 }

@@ -67,7 +67,7 @@ def main(conf):
     log_interval = 2 * conf.training.batch_size
     model.training = True  # adding Gaussian noise to embedding
     # for ion in ["ZN", "CA", "MN", "MG"]:
-    for ion in ["CA"]:
+    for ion in ["MN", "ZN", "CA"]:
         train_dataloader, val_dataloader, pos_weight = data_loader(
             conf, device, random_seed=RANDOM_SEED, ion_type=ion
         )
