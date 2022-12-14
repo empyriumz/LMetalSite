@@ -13,22 +13,21 @@
         "save_feature": 1
         },
     "model": {
-        "name": "composite",
-        "feature_dim": 1408,
-        "hidden_dim": 128,
+        "name": "Evoformer",
+        "hidden_dim": 64,
         "num_encoder_layers": 2,
         "num_heads": 4,
-        "augment_eps": 0.05,
-        "dropout": 0.25,
-        "ion_type": "MG"
+        "augment_eps": 0.1,
+        "dropout": 0.3,
+        "ion_type": "CA"
     },
     "training": 
         {
          "learning_rate": 5e-4,
-         "val_ratio": 0.2,
+         "val_ratio": 0.25,
          "feature_batch_size": 4,
          "batch_size": 64,
-         "epochs": 10,
-         "weight_decay": 1e-4
+         "epochs": 15,
+         "weight_decay": 1e-2
         }
 }

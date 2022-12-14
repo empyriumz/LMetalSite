@@ -33,7 +33,12 @@ def main(conf):
     logging.info(
         "Training begins at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
     )
-
+    if conf.model.name == "Evoformer":
+        conf.model.feature_dim = 384
+    elif conf.model.name == "ProtTrans":
+        conf.model.feature_dim = 1024
+    elif conf.model.name == "Composite":
+        conf.model.feature_dim = 1408
     # Load LMetalSite model
     model = LMetalSite(
         conf.model.feature_dim,
@@ -45,7 +50,12 @@ def main(conf):
         conf.model.ion_type,
     ).to(device)
 
-    optimizer = torch.optim.Adam(
+    # optimizer = torch.optim.Adam(
+    #     model.parameters(),
+    #     lr=conf.training.learning_rate,
+    #     weight_decay=conf.training.weight_decay,
+    # )
+    optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=conf.training.learning_rate,
         weight_decay=conf.training.weight_decay,
@@ -56,7 +66,8 @@ def main(conf):
     metric_auprc = BinaryAveragePrecision(thresholds=None)
     log_interval = 2 * conf.training.batch_size
     model.training = True  # adding Gaussian noise to embedding
-    for ion in ["ZN", "CA", "MN", "MG"]:
+    # for ion in ["ZN", "CA", "MN", "MG"]:
+    for ion in ["MN", "ZN", "CA"]:
         train_dataloader, val_dataloader, pos_weight = data_loader(
             conf, device, random_seed=RANDOM_SEED, ion_type=ion
         )
