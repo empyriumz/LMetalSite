@@ -8,12 +8,11 @@
     "data":
         {
         "data_path": "datasets",
-        "max_seq_len": 2000,
         "precomputed_feature": "precomputed_embedding",
+        "max_seq_len": 5000,
         "save_feature": 0
         },
     "model": {
-        "name": "ProtTrans",
         "feature_dim": 1024,
         "hidden_dim": 64,
         "num_encoder_layers": 2,
