@@ -66,8 +66,7 @@ def main(conf):
     metric_auprc = BinaryAveragePrecision(thresholds=None)
     log_interval = 2 * conf.training.batch_size
     model.training = True  # adding Gaussian noise to embedding
-    # for ion in ["ZN", "CA", "MN", "MG"]:
-    for ion in ["MN", "ZN", "CA"]:
+    for ion in ["MN", "ZN", "MG", "CA"]:
         train_dataloader, val_dataloader, pos_weight = data_loader(
             conf, device, random_seed=RANDOM_SEED, ion_type=ion
         )
@@ -83,6 +82,7 @@ def main(conf):
                 feats = feats.to(device)
                 masks = masks.to(device)
                 labels = labels.to(device)
+                # feats = torch.sigmoid(feats)
                 outputs = model(feats, masks)
                 loss_ = loss_func(outputs * masks, labels)
                 loss_.backward()

@@ -1,9 +1,9 @@
 import torch
-from ml_collections import config_dict
 import json
 from tqdm import tqdm
 import argparse
 from timeit import default_timer as timer
+from ml_collections import config_dict
 from pathlib import Path
 import datetime
 import logging
@@ -85,13 +85,13 @@ def train(conf):
                     re.sub(r"[UZOB]", "X", " ".join(list(sequence)))
                     for sequence in batch_seq_list
                 ]
-                optimizer.zero_grad(set_to_none=True)
                 ids = tokenizer.batch_encode_plus(
                     batch_seq_list, add_special_tokens=True, padding=True
                 )
                 input_ids = torch.tensor(ids["input_ids"]).to(device)
                 masks = torch.tensor(ids["attention_mask"]).to(device)
                 labels = padding(batch_label_list, input_ids.size(1)).to(device)
+                optimizer.zero_grad(set_to_none=True)
                 outputs = model(input_ids=input_ids, attention_mask=masks)
                 loss_ = loss_func(outputs * masks, labels)
                 loss_.backward()
