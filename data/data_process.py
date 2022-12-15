@@ -9,6 +9,7 @@ import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from transformers import T5EncoderModel, T5Tokenizer
+from .utils import calculate_pos_weight, process_fasta
 
 
 class MetalDatasetTest(Dataset):
@@ -106,72 +107,46 @@ class FineTuneDataset(Dataset):
     def __len__(self):
         return len(self.ID_list)
 
+    def padding(self, batch, max_len):
+        batch_input_token = []
+        batch_protein_label = []
+        batch_protein_mask = []
+        for input_token, protein_label in batch:
+            padded_token = np.zeros(max_len)
+            padded_token[: len(input_token)] = input_token
+            padded_token = torch.tensor(padded_token, dtype=torch.long)
+            batch_input_token.append(padded_token)
+
+            protein_mask = np.zeros(max_len)
+            protein_mask[: len(input_token)] = 1
+            protein_mask = torch.tensor(protein_mask, dtype=torch.long)
+            batch_protein_mask.append(protein_mask)
+
+            padded_protein_label = np.zeros(max_len)
+            padded_protein_label[: len(protein_label)] = protein_label
+            padded_protein_label = torch.tensor(padded_protein_label, dtype=torch.float)
+            batch_protein_label.append(padded_protein_label)
+
+        return (
+            torch.stack(batch_input_token),
+            torch.stack(batch_protein_label),
+            torch.stack(batch_protein_mask),
+        )
+
     def __getitem__(self, idx):
-        batch_seq_list = [
-            re.sub(r"[UZOB]", "X", " ".join(list(sequence)))
-            for sequence in batch_seq_list
-        ]
-        batch_labels, _, batch_tokens = self.tokenizer([self.data[idx]])
-        return batch_tokens[0], batch_labels[0]
+        seq_list = re.sub(r"[UZOB]", "X", " ".join(list(self.seq_list[idx])))
+        ids = self.tokenizer.encode_plus(
+            seq_list, add_special_tokens=True, padding=True
+        )
+        labels = [int(label) for label in self.label_list[idx]]
 
+        return ids["input_ids"], labels
 
-def process_fasta(fasta_file, max_input_seq_num=5000):
-    ID_list = []
-    seq_list = []
+    def collate_fn(self, batch):
+        max_len = max([len(input_id) for input_id, _ in batch])
+        input_seqs, protein_label, protein_mask = self.padding(batch, max_len)
 
-    with open(fasta_file, "r") as f:
-        lines = f.readlines()
-    for line in lines:
-        if line[0] == ">":
-            name_item = line[1:-1].split("|")
-            ID = "_".join(name_item[0 : min(2, len(name_item))])
-            ID = re.sub(" ", "_", ID)
-            ID_list.append(ID)
-        elif line[0] in string.ascii_letters:
-            seq_list.append(line.strip().upper())
-
-    if len(ID_list) == len(seq_list):
-        if len(ID_list) > max_input_seq_num:
-            raise ValueError(
-                "Too much sequences! Up to {} sequences are supported each time!".format(
-                    max_input_seq_num
-                )
-            )
-        else:
-            return [ID_list, seq_list]
-    else:
-        raise ValueError("The format of input fasta file is incorrect")
-
-
-def process_train_fasta(fasta_file, max_input_seq_num=5000):
-    ID_list = []
-    seq_list = []
-    label_list = []
-
-    with open(fasta_file, "r") as f:
-        lines = f.readlines()
-    for line in lines:
-        if line[0] == ">":
-            name_item = line[1:-1].split("|")
-            ID = "_".join(name_item[0 : min(2, len(name_item))])
-            ID = re.sub(" ", "_", ID)
-            ID_list.append(ID)
-        elif line[0] in string.ascii_letters:
-            seq_list.append(line.strip().upper())
-        elif line[0] in string.digits:
-            label_list.append(line.strip())
-
-    if len(ID_list) == len(seq_list):
-        if len(ID_list) > max_input_seq_num:
-            raise ValueError(
-                "Too much sequences! Up to {} sequences are supported each time!".format(
-                    max_input_seq_num
-                )
-            )
-        else:
-            return [ID_list, seq_list, label_list]
-    else:
-        raise ValueError("The format of input fasta file is incorrect")
+        return input_seqs, protein_label, protein_mask
 
 
 def prottrans_embedding(ID_list, seq_list, conf, device, normalize=True, ion_type="ZN"):
@@ -326,22 +301,9 @@ def feature_extraction(
     return protein_features
 
 
-def calculate_pos_weight(label_list):
-    pos_num, neg_num = [], []
-    for label in label_list:
-        pos_ = sum([int(i) for i in label])
-        pos_num.append(pos_)
-        neg_num.append(len(label) - pos_)
-
-    pos_weight = sum(neg_num) / sum(pos_num)
-    return pos_weight
-
-
 def data_loader(conf, device, random_seed=0, ion_type="ZN"):
     fasta_path = conf.data.data_path + "/{}_train.fa".format(ion_type)
-    ID_list, seq_list, label_list = process_train_fasta(
-        fasta_path, conf.data.max_seq_len
-    )
+    ID_list, seq_list, label_list = process_fasta(fasta_path, conf.data.max_seq_len)
     protein_features = feature_extraction(
         ID_list, seq_list, conf, device, ion_type=ion_type, model_name=conf.model.name
     )
@@ -382,13 +344,38 @@ def data_loader(conf, device, random_seed=0, ion_type="ZN"):
     return train_dataloader, val_dataloader, pos_weight
 
 
-def padding(batch, maxlen):
-    batch_list = []
-    for label in batch:
-        protein_label = [int(i) for i in label]
-        padded_list = np.zeros(maxlen)
-        padded_list[: len(protein_label)] = protein_label
-        padded_list = torch.tensor(padded_list, dtype=torch.float)
-        batch_list.append(padded_list)
+def finetune_data_loader(conf, tokenizer, random_seed=0, ion_type="ZN"):
+    fasta_path = conf.data.data_path + "/{}_train.fa".format(ion_type)
+    ID_list, seq_list, label_list = process_fasta(fasta_path, conf.data.max_seq_len)
+    pos_weight = calculate_pos_weight(label_list)
+    dataset = FineTuneDataset(ID_list, seq_list, label_list, tokenizer)
+    n_val = int(len(dataset) * conf.training.val_ratio)
+    n_train = len(dataset) - n_val
+    train_dataset, val_dataset = torch.utils.data.random_split(
+        dataset, [n_train, n_val], generator=torch.Generator().manual_seed(random_seed)
+    )
+    logging.info(
+        "\nTraining sequences for {}: {}; validation sequences {}".format(
+            ion_type, len(train_dataset), len(val_dataset)
+        )
+    )
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=conf.training.batch_size,
+        collate_fn=dataset.collate_fn,
+        shuffle=True,
+        drop_last=False,
+        pin_memory=True,
+        num_workers=8,
+    )
+    val_dataloader = DataLoader(
+        val_dataset,
+        batch_size=conf.training.batch_size,
+        collate_fn=dataset.collate_fn,
+        shuffle=False,
+        drop_last=False,
+        pin_memory=True,
+        num_workers=8,
+    )
 
-    return torch.stack(batch_list)
+    return train_dataloader, val_dataloader, pos_weight

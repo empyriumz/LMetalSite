@@ -7,7 +7,8 @@ from transformers import T5EncoderModel, T5Tokenizer
 from torch.utils.data import DataLoader
 import gc
 from model.model import LMetalSite_Test
-from data.data_process import MetalDatasetTest, process_fasta
+from data.data_process import MetalDatasetTest
+from data.utils import process_fasta
 
 ############ Set to your own path! ############
 # ProtTrans_path = "/home/yuanqm/protein_binding_sites/tools/Prot-T5-XL-U50"
