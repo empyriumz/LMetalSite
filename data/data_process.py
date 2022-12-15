@@ -110,11 +110,15 @@ class FineTuneDataset(Dataset):
         return len(self.ID_list)
 
     def __getitem__(self, idx):
+        batch_seq_list = [
+            re.sub(r"[UZOB]", "X", " ".join(list(sequence)))
+            for sequence in batch_seq_list
+        ]
         batch_labels, _, batch_tokens = self.tokenizer([self.data[idx]])
         return batch_tokens[0], batch_labels[0]
 
 
-def process_fasta(fasta_file, max_input_seq_num):
+def process_fasta(fasta_file, max_input_seq_num=5000):
     ID_list = []
     seq_list = []
 
@@ -142,7 +146,7 @@ def process_fasta(fasta_file, max_input_seq_num):
         raise ValueError("The format of input fasta file is incorrect")
 
 
-def process_train_fasta(fasta_file, max_input_seq_num):
+def process_train_fasta(fasta_file, max_input_seq_num=5000):
     ID_list = []
     seq_list = []
     label_list = []
@@ -173,7 +177,7 @@ def process_train_fasta(fasta_file, max_input_seq_num):
         raise ValueError("The format of input fasta file is incorrect")
 
 
-def prottrans_embedding(ID_list, seq_list, conf, device, ion_type="ZN"):
+def prottrans_embedding(ID_list, seq_list, conf, device, normalize=True, ion_type="ZN"):
     protein_features = {}
     max_repr = np.load("script/ProtTrans_repr_max.npy")
     min_repr = np.load("script/ProtTrans_repr_min.npy")
@@ -183,8 +187,8 @@ def prottrans_embedding(ID_list, seq_list, conf, device, ion_type="ZN"):
                 conf.data.precomputed_feature
                 + "/{}_ProtTrans/{}.npy".format(ion_type, id)
             )
-
-            seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
+            if normalize:
+                seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
             protein_features[id] = seq_emd
 
         return protein_features
@@ -244,7 +248,9 @@ def prottrans_embedding(ID_list, seq_list, conf, device, ion_type="ZN"):
     return protein_features
 
 
-def load_evoformer_embedding(ID_list, precomputed_feature_path, ion_type="ZN"):
+def load_evoformer_embedding(
+    ID_list, precomputed_feature_path, normalize=True, ion_type="ZN"
+):
     protein_features = {}
     max_repr = np.load("script/Evoformer_repr_max.npy")
     min_repr = np.load("script/Evoformer_repr_min.npy")
@@ -257,13 +263,16 @@ def load_evoformer_embedding(ID_list, precomputed_feature_path, ion_type="ZN"):
         # seq_emd = np.concatenate((feature["single"], feature["pair"]), axis=1)
         seq_emd = feature["single"]
         # seq_emd = feature["pair"]
-        seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
+        if normalize:
+            seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
         protein_features[id] = seq_emd
 
     return protein_features
 
 
-def composite_embedding(ID_list, precomputed_feature_path, ion_type="ZN"):
+def composite_embedding(
+    ID_list, precomputed_feature_path, normalize=True, ion_type="ZN"
+):
     max_repr_evo = np.load("script/Evoformer_repr_max.npy")
     min_repr_evo = np.load("script/Evoformer_repr_min.npy")
     max_repr_prot = np.load("script/ProtTrans_repr_max.npy")
@@ -279,7 +288,8 @@ def composite_embedding(ID_list, precomputed_feature_path, ion_type="ZN"):
             precomputed_feature_path + "/{}_ProtTrans/{}.npy".format(ion_type, id)
         )
         seq_emd = np.concatenate((feature_prot, feature_evo["single"]), axis=1)
-        seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
+        if normalize:
+            seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
         protein_features[id] = seq_emd
 
     return protein_features
@@ -294,15 +304,26 @@ def feature_extraction(
             conf.data.precomputed_feature
         ), "No online Evoformer embedding support yet"
         protein_features = load_evoformer_embedding(
-            ID_list, conf.data.precomputed_feature, ion_type=ion_type
+            ID_list,
+            conf.data.precomputed_feature,
+            normalize=conf.data.normalize,
+            ion_type=ion_type,
         )
     elif model_name == "ProtTrans":
         protein_features = prottrans_embedding(
-            ID_list, seq_list, conf, device, ion_type=ion_type
+            ID_list,
+            seq_list,
+            conf,
+            device,
+            normalize=conf.data.normalize,
+            ion_type=ion_type,
         )
     elif model_name == "Composite":
         protein_features = composite_embedding(
-            ID_list, conf.data.precomputed_feature, ion_type=ion_type
+            ID_list,
+            conf.data.precomputed_feature,
+            normalize=conf.data.normalize,
+            ion_type=ion_type,
         )
 
     return protein_features

@@ -168,11 +168,21 @@ class LMetalSite(nn.Module):
         self.augment_eps = augment_eps
         self.training = training
         # Embedding layers
-        self.input_block = nn.Sequential(
-            nn.LayerNorm(feature_dim, eps=1e-6),
-            nn.Linear(feature_dim, hidden_dim),
-            nn.LeakyReLU(),
-        )
+        if (
+            feature_dim == 384
+        ):  # hard encode a sigmoid for evoformer to replace min-max normalization
+            self.input_block = nn.Sequential(
+                nn.Sigmoid(),
+                nn.LayerNorm(feature_dim, eps=1e-6),
+                nn.Linear(feature_dim, hidden_dim),
+                nn.LeakyReLU(),
+            )
+        else:
+            self.input_block = nn.Sequential(
+                nn.LayerNorm(feature_dim, eps=1e-6),
+                nn.Linear(feature_dim, hidden_dim),
+                nn.LeakyReLU(),
+            )
 
         self.hidden_block = nn.Sequential(
             nn.LayerNorm(hidden_dim, eps=1e-6),

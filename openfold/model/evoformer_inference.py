@@ -15,9 +15,12 @@
 import torch
 import torch.nn as nn
 
-from openfold.model.embedders import InputEmbedder
-from openfold.model.evoformer import EvoformerStack
-
+from openfold.model.evoformer import EvoformerStack, ExtraMSAStack
+from openfold.utils.feats import build_extra_msa_feat
+from openfold.model.embedders import (
+    InputEmbedder,
+    ExtraMSAEmbedder,
+)
 
 class Evoformer(nn.Module):
     """
@@ -34,14 +37,22 @@ class Evoformer(nn.Module):
 
         self.globals = config.globals
         self.config = config.model
-
-        # Main trunk + structure module
+        self.extra_msa_config = self.config.extra_msa
+        
         self.input_embedder = InputEmbedder(
             **self.config["input_embedder"],
         )
+        if self.extra_msa_config.enabled:
+            self.extra_msa_embedder = ExtraMSAEmbedder(
+                **self.extra_msa_config["extra_msa_embedder"],
+            )
+            self.extra_msa_stack = ExtraMSAStack(
+                **self.extra_msa_config["extra_msa_stack"],
+            )
         self.evoformer = EvoformerStack(
             **self.config["evoformer_stack"],
         )
+        
 
     def forward(self, feats):
         # Primary output dictionary
@@ -76,7 +87,19 @@ class Evoformer(nn.Module):
             m = m.cpu()
             z = z.cpu()
 
-
+        if self.config.extra_msa.enabled:
+            # [*, S_e, N, C_e]
+            a = self.extra_msa_embedder(build_extra_msa_feat(feats))
+            z = self.extra_msa_stack(
+                    a,
+                    z,
+                    msa_mask=feats["extra_msa_mask"].to(dtype=m.dtype),
+                    chunk_size=self.globals.chunk_size,
+                    use_lma=self.globals.use_lma,
+                    pair_mask=pair_mask.to(dtype=m.dtype),
+                    inplace_safe=inplace_safe,
+                    _mask_trans=self.config._mask_trans,
+                )
         # Run MSA + pair embeddings through the trunk of the network
         # m: [*, S, N, C_m]
         # z: [*, N, N, C_z]
