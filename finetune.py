@@ -1,7 +1,6 @@
 import torch
 from ml_collections import config_dict
 import json
-from tqdm import tqdm
 import argparse
 from timeit import default_timer as timer
 from pathlib import Path
@@ -77,7 +76,7 @@ def train(conf):
         for epoch in range(conf.training.epochs):
             train_loss, train_auc, train_auprc = 0.0, 0.0, 0.0
             model.train()
-            for i, j in tqdm(enumerate(range(0, len(ID_list), batch_size))):
+            for i, j in enumerate(range(0, len(ID_list), batch_size)):
                 batch_seq_list = seq_list[j : j + batch_size]
                 batch_label_list = label_list[j : j + batch_size]
                 # Load sequences and map rarely occurred amino acids (U,Z,O,B) to (X)

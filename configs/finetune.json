@@ -2,7 +2,7 @@
     "general": 
         {
          "seed": 1, 
-         "gpu_id": 1, 
+         "gpu_id": 0, 
          "debug": 0
         },
     "data":
@@ -25,10 +25,10 @@
     "training": 
         {
          "learning_rate": 5e-4,
-         "fix_backbone_weight": 1,
+         "fix_backbone_weight": 0,
          "backbone_learning_rate": 1e-5,
          "val_ratio": 0.25,
-         "batch_size": 4,
+         "batch_size": 2,
          "epochs": 15,
          "weight_decay": 1e-2
         }
