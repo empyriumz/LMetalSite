@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from .multi_modal import MULTModel
 
 class Self_Attention(nn.Module):
     def __init__(self, num_hidden, num_heads=4):
@@ -208,38 +208,25 @@ class LMetalSite(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(hidden_dim, 1, bias=True),
         )
-        # self.ZN_head.requires_grad_(False)
         self.CA_head = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim, bias=True),
             nn.LeakyReLU(),
             nn.Linear(hidden_dim, 1, bias=True),
         )
-        # self.CA_head.requires_grad_(False)
         self.MG_head = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim, bias=True),
             nn.LeakyReLU(),
             nn.Linear(hidden_dim, 1, bias=True),
         )
-        # self.MG_head.requires_grad_(False)
         self.MN_head = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim, bias=True),
             nn.LeakyReLU(),
             nn.Linear(hidden_dim, 1, bias=True),
         )
-        # self.MN_head.requires_grad_(False)
         # Initialization
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
-
-        # if self.ion_type == "ZN":
-        #     self.ZN_head.requires_grad_(True)
-        # elif self.ion_type == "CA":
-        #     self.CA_head.requires_grad_(True)
-        # elif self.ion_type == "MN":
-        #     self.MN_head.requires_grad_(True)
-        # elif self.ion_type == "MG":
-        #     self.MG_head.requires_grad_(True)
 
     def forward(self, protein_feat, mask):
         # Data augmentation
@@ -265,48 +252,21 @@ class LMetalSite(nn.Module):
 
         return logits
 
-
-class LMetalSiteFineTune(nn.Module):
+class LMetalSiteMultiModal(nn.Module):
     def __init__(
         self,
-        backbone_model,
-        feature_dim,
-        hidden_dim=64,
-        num_encoder_layers=2,
-        num_heads=4,
-        augment_eps=0.05,
-        dropout=0.2,
+        conf,
         ion_type="ZN",
         training=True,
     ):
-        super(LMetalSite, self).__init__()
+        super(LMetalSiteMultiModal, self).__init__()
 
         # Hyperparameters
-        self.backbone_model = backbone_model
-        self.augment_eps = augment_eps
+        self.augment_eps = conf.model.augment_eps
+        hidden_dim = conf.model.hidden_dim
         self.training = training
-        # Embedding layers
-        self.input_block = nn.Sequential(
-            nn.LayerNorm(feature_dim, eps=1e-6),
-            nn.Linear(feature_dim, hidden_dim),
-            nn.LeakyReLU(),
-        )
+        self.encoding_module = MULTModel(conf.model)
 
-        self.hidden_block = nn.Sequential(
-            nn.LayerNorm(hidden_dim, eps=1e-6),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU(),
-            nn.LayerNorm(hidden_dim, eps=1e-6),
-        )
-
-        # Encoder layers
-        self.encoder_layers = nn.ModuleList(
-            [
-                TransformerLayer(hidden_dim, num_heads, dropout)
-                for _ in range(num_encoder_layers)
-            ]
-        )
         assert ion_type in ["ZN", "CA", "MG", "MN"]
         self.ion_type = ion_type
 
@@ -336,26 +296,30 @@ class LMetalSiteFineTune(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, protein_feat, mask):
+    def forward(self, feat_a, feat_b):
         # Data augmentation
         if self.training and self.augment_eps > 0:
-            protein_feat = protein_feat + self.augment_eps * torch.randn_like(
-                protein_feat
+            feat_a = feat_a + self.augment_eps * torch.randn_like(
+                feat_a
             )
+            feat_b = feat_b + self.augment_eps * torch.randn_like(
+                feat_b
+            )
+        output, _ = self.encoding_module(feat_a, feat_b)
+        # h_V = self.input_block(protein_feat)
+        # h_V = self.hidden_block(h_V)
 
-        h_V = self.input_block(protein_feat)
-        h_V = self.hidden_block(h_V)
-
-        for layer in self.encoder_layers:
-            h_V = layer(h_V, mask)
+        # for layer in self.encoder_layers:
+        #     h_V = layer(h_V, mask)
 
         if self.ion_type == "ZN":
-            logits = self.ZN_head(h_V).squeeze(-1)
+            logits = self.ZN_head(output).squeeze(-1)
         elif self.ion_type == "CA":
-            logits = self.CA_head(h_V).squeeze(-1)
+            logits = self.CA_head(output).squeeze(-1)
         elif self.ion_type == "MN":
-            logits = self.MN_head(h_V).squeeze(-1)
+            logits = self.MN_head(output).squeeze(-1)
         elif self.ion_type == "MG":
-            logits = self.MG_head(h_V).squeeze(-1)
+            logits = self.MG_head(output).squeeze(-1)
 
         return logits
+

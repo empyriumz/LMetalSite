@@ -8,19 +8,22 @@
     "data":
         {
         "data_path": "datasets",
-        "data_type": "original",
+        "data_type": "multi_modal",
         "max_seq_len": 2000,
         "precomputed_feature": "precomputed_embedding",
         "normalize": 1,
         "save_feature": 0
         },
     "model": {
-        "name": "ProtTrans",
+        "name": "MultiModal",
+        "feature_dim_1": 1024,
+        "feature_dim_2": 384,
         "hidden_dim": 64,
         "num_encoder_layers": 2,
         "num_heads": 4,
         "augment_eps": 0.1,
         "dropout": 0.3,
+        "attn_mask": 1,
         "ion_type": "CA"
     },
     "training": 
@@ -28,8 +31,8 @@
          "learning_rate": 5e-4,
          "val_ratio": 0.25,
          "feature_batch_size": 4,
-         "batch_size": 64,
-         "epochs": 10,
+         "batch_size": 32,
+         "epochs": 15,
          "weight_decay": 2e-2
         }
 }

@@ -17,7 +17,7 @@ from script.utils import (
     logging_related,
     parse_arguments,
 )
-from data.data_process import data_loader
+from data.data_process import prep_dataset, prep_dataloader
 from model.model import LMetalSite
 
 
@@ -50,11 +50,6 @@ def main(conf):
         conf.model.ion_type,
     ).to(device)
 
-    # optimizer = torch.optim.Adam(
-    #     model.parameters(),
-    #     lr=conf.training.learning_rate,
-    #     weight_decay=conf.training.weight_decay,
-    # )
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=conf.training.learning_rate,
@@ -67,8 +62,9 @@ def main(conf):
     log_interval = 2 * conf.training.batch_size
     model.training = True  # adding Gaussian noise to embedding
     for ion in ["MN", "ZN", "MG", "CA"]:
-        train_dataloader, val_dataloader, pos_weight = data_loader(
-            conf, device, random_seed=RANDOM_SEED, ion_type=ion
+        dataset, pos_weight = prep_dataset(conf, device, ion_type=ion)
+        train_dataloader, val_dataloader = prep_dataloader(
+            dataset, conf, random_seed=RANDOM_SEED, ion_type=ion
         )
         loss_func = torch.nn.BCEWithLogitsLoss(
             pos_weight=torch.sqrt(torch.tensor(pos_weight))

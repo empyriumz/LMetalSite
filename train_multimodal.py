@@ -1,26 +1,27 @@
-import torch
-import json
-from tqdm import tqdm
-import argparse
-from timeit import default_timer as timer
-from ml_collections import config_dict
-from pathlib import Path
 import datetime
+import argparse
+import json
+import torch
 import logging
-from script.utils import (
-    logging_related,
-    parse_arguments,
-)
-from transformers import T5EncoderModel, T5Tokenizer
+from tqdm import tqdm
+from ml_collections import config_dict
+from timeit import default_timer as timer
 from torchmetrics.classification import (
     BinaryAUROC,
     BinaryAveragePrecision,
+    BinaryF1Score,
+)
+from pathlib import Path
+from script.utils import (
+    add_alphafold_args,
+    logging_related,
+    parse_arguments,
 )
 from data.data_process import prep_dataset, prep_dataloader
-from model.finetune_model import MetalIonSiteClassification
+from model.model import LMetalSiteMultiModal
 
 
-def train(conf):
+def main(conf):
     RANDOM_SEED = int(conf.general.seed)
     torch.manual_seed(RANDOM_SEED)
     torch.cuda.manual_seed(RANDOM_SEED)
@@ -29,73 +30,66 @@ def train(conf):
         if torch.cuda.is_available()
         else "cpu"
     )
-    batch_size = conf.training.batch_size
-    log_interval = 4 * batch_size
-
-    backbone_model = T5EncoderModel.from_pretrained("Rostlab/prot_t5_xl_uniref50")
-
-    tokenizer = T5Tokenizer.from_pretrained(
-        "Rostlab/prot_t5_xl_uniref50", do_lower_case=False
+    logging.info(
+        "Training begins at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
     )
+    if conf.model.name == "Evoformer":
+        conf.model.feature_dim = 384
+    elif conf.model.name == "ProtTrans":
+        conf.model.feature_dim = 1024
+    elif conf.model.name == "Composite":
+        conf.model.feature_dim = 1408
+    # Load LMetalSite model
+    model = LMetalSiteMultiModal(conf).to(device)
 
-    model = MetalIonSiteClassification(backbone_model, conf).to(device)
-    if conf.training.fix_backbone_weight:
-        optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=conf.training.learning_rate,
-            weight_decay=conf.training.weight_decay,
-        )
-    else:
-        optimizer = torch.optim.AdamW(
-            [
-                {"params": model.classifier.parameters()},
-                {
-                    "params": model.backbone.parameters(),
-                    "lr": conf.training.backbone_learning_rate,
-                },
-            ],
-            lr=conf.training.learning_rate,
-            weight_decay=conf.training.weight_decay,
-        )
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=conf.training.learning_rate,
+        weight_decay=conf.training.weight_decay,
+    )
 
     metric_auc = BinaryAUROC(thresholds=None)
     metric_auprc = BinaryAveragePrecision(thresholds=None)
+    log_interval = 2 * conf.training.batch_size
+    model.training = True  # adding Gaussian noise to embedding
     for ion in ["MN", "ZN", "MG", "CA"]:
-        model.training = True
-        model.ion_type = ion
-        dataset, pos_weight = prep_dataset(
-            conf, device, tokenizer=tokenizer, ion_type=ion
-        )
+        dataset, pos_weight = prep_dataset(conf, device, ion_type=ion)
         train_dataloader, val_dataloader = prep_dataloader(
             dataset, conf, random_seed=RANDOM_SEED, ion_type=ion
         )
         loss_func = torch.nn.BCEWithLogitsLoss(
             pos_weight=torch.sqrt(torch.tensor(pos_weight))
         )
+        model.ion_type = ion
         for epoch in range(conf.training.epochs):
             train_loss, train_auc, train_auprc = 0.0, 0.0, 0.0
             for i, batch_data in tqdm(enumerate(train_dataloader)):
-                input_ids, labels, masks = batch_data
-                input_ids = input_ids.to(device)
+                feats_1, feats_2, labels, masks = batch_data
+                optimizer.zero_grad(set_to_none=True)
+                feats_1 = feats_1.to(device)
+                feats_2 = feats_2.to(device)
                 masks = masks.to(device)
                 labels = labels.to(device)
-                optimizer.zero_grad(set_to_none=True)
-                outputs = model(input_ids=input_ids, attention_mask=masks)
+                outputs = model(feats_1, feats_2)
                 loss_ = loss_func(outputs * masks, labels)
                 loss_.backward()
                 optimizer.step()
-                running_loss = loss_.detach().cpu().numpy()
                 labels = torch.masked_select(labels, masks.bool())
                 outputs = torch.sigmoid(torch.masked_select(outputs, masks.bool()))
                 running_auc = metric_auc(outputs, labels)
                 running_auprc = metric_auprc(outputs, labels)
+                # running_f1 = metric_f1(outputs, labels)
+                running_loss = loss_.detach().cpu().numpy()
                 train_loss += running_loss
                 train_auc += running_auc.detach().cpu().numpy()
                 train_auprc += running_auprc.detach().cpu().numpy()
-
-                if i % log_interval == 0:
-                    logging.info("Running train loss: {:.4f}".format(running_loss))
-
+                # train_f1 += running_f1.detach().cpu().numpy()
+                if i % log_interval == 0 and i > 0:
+                    logging.info(
+                        "Running train loss: {:.4f}, auc: {:.3f}, auprc: {:.3f}".format(
+                            running_loss, running_auc, running_auprc
+                        )
+                    )
             logging.info(
                 "Epoch {} train loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
                     epoch + 1,
@@ -107,22 +101,24 @@ def train(conf):
             model.eval()
             with torch.no_grad():
                 model.training = False
-                val_loss, val_auc, val_auprc = 0.0, 0.0, 0.0
+                val_loss, val_auc, val_f1, val_auprc = 0.0, 0.0, 0.0, 0.0
                 for i, batch_data in tqdm(enumerate(val_dataloader)):
-                    input_ids, labels, masks = batch_data
-                    input_ids = input_ids.to(device)
+                    feats_1, feats_2, labels, masks = batch_data
+                    feats_1 = feats_1.to(device)
+                    feats_2 = feats_2.to(device)
                     masks = masks.to(device)
                     labels = labels.to(device)
-                    outputs = model(input_ids=input_ids, attention_mask=masks)
-                    loss_ = loss_func(outputs * masks, labels)
+                    outputs = model(feats_1, feats_2)
                     labels = torch.masked_select(labels, masks.bool())
                     outputs = torch.sigmoid(torch.masked_select(outputs, masks.bool()))
                     running_auc = metric_auc(outputs, labels).detach().cpu().numpy()
                     running_auprc = metric_auprc(outputs, labels).detach().cpu().numpy()
+                    # running_f1 = metric_f1(outputs, labels).detach().cpu().numpy()
                     running_loss = loss_.detach().cpu().numpy()
                     val_loss += running_loss
                     val_auc += running_auc
                     val_auprc += running_auprc
+                    # val_f1 += running_f1
 
             logging.info(
                 "Epoch {} val loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
@@ -132,6 +128,7 @@ def train(conf):
                     val_auprc / (i + 1),
                 )
             )
+
     logging.info(
         "Training is done at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
     )
@@ -141,6 +138,7 @@ if __name__ == "__main__":
     start = timer()
     parser = argparse.ArgumentParser()
     args = parse_arguments(parser)
+    add_alphafold_args(parser)
     output_path = (
         Path("./results/")
         / Path(args.config).stem
@@ -162,7 +160,7 @@ if __name__ == "__main__":
     logging related part
     """
     logging_related(output_path)
+    main(conf)
 
-    train(conf)
     end = timer()
     logging.info("Total time used: {:.1f}".format(end - start))

@@ -1,15 +1,10 @@
-import string
 import re
 import torch
-import os
-import gc
 import logging
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
-from tqdm import tqdm
-from transformers import T5EncoderModel, T5Tokenizer
-from .utils import calculate_pos_weight, process_fasta
+from .utils import calculate_pos_weight, process_fasta, feature_extraction
 
 
 class MetalDatasetTest(Dataset):
@@ -46,14 +41,15 @@ class MetalDatasetTest(Dataset):
         maxlen = max([protein_feat.shape[0] for protein_feat in batch])
         batch_protein_feat, batch_protein_mask = self.padding(batch, maxlen)
 
-        return batch_protein_feat, batch_protein_mask, maxlen
+        return batch_protein_feat, batch_protein_mask
 
 
 class MetalDataset(Dataset):
-    def __init__(self, df, protein_features, feature_dim):
-        self.df = df
+    def __init__(self, ID_list, seq_list, label_list, protein_features):
+        pred_dict = {"ID": ID_list, "Sequence": seq_list, "Label": label_list}
+        self.df = pd.DataFrame(pred_dict)
         self.protein_features = protein_features
-        self.feature_dim = feature_dim
+        self.feature_dim = protein_features[ID_list[0]].shape[1]
 
     def __len__(self):
         return self.df.shape[0]
@@ -95,6 +91,64 @@ class MetalDataset(Dataset):
         protein_feat, protein_label, protein_mask = self.padding(batch, maxlen)
 
         return protein_feat, protein_label, protein_mask, maxlen
+
+
+class MultiModalDataset(Dataset):
+    def __init__(self, ID_list, seq_list, label_list, protein_features):
+        pred_dict = {"ID": ID_list, "Sequence": seq_list, "Label": label_list}
+        self.df = pd.DataFrame(pred_dict)
+        self.protein_features = protein_features
+        self.feature_dim_1 = protein_features[ID_list[0]][0].shape[1]
+        self.feature_dim_2 = protein_features[ID_list[0]][1].shape[1]
+
+    def __len__(self):
+        return self.df.shape[0]
+
+    def __getitem__(self, idx):
+        data = self.df.loc[idx]
+        protein_feat = self.protein_features[data["ID"]]
+        feat_1, feat_2 = protein_feat[0], protein_feat[1]
+        protein_label = [int(label) for label in data["Label"]]
+        return feat_1, feat_2, protein_label
+
+    def padding(self, batch, maxlen):
+        batch_feat_1 = []
+        batch_feat_2 = []
+        batch_protein_label = []
+        batch_protein_mask = []
+        for feat_1, feat_2, protein_label in batch:
+            padded_feat_1 = np.zeros((maxlen, self.feature_dim_1))
+            padded_feat_1[: feat_1.shape[0]] = feat_1
+            padded_feat_1 = torch.tensor(padded_feat_1, dtype=torch.float)
+            batch_feat_1.append(padded_feat_1)
+
+            padded_feat_2 = np.zeros((maxlen, self.feature_dim_2))
+            padded_feat_2[: feat_2.shape[0]] = feat_2
+            padded_feat_2 = torch.tensor(padded_feat_2, dtype=torch.float)
+            batch_feat_2.append(padded_feat_2)
+
+            protein_mask = np.zeros(maxlen)
+            protein_mask[: feat_1.shape[0]] = 1
+            protein_mask = torch.tensor(protein_mask, dtype=torch.long)
+            batch_protein_mask.append(protein_mask)
+
+            padded_label = np.zeros(maxlen)
+            padded_label[: feat_1.shape[0]] = protein_label
+            padded_label = torch.tensor(padded_label, dtype=torch.float)
+            batch_protein_label.append(padded_label)
+
+        return (
+            torch.stack(batch_feat_1),
+            torch.stack(batch_feat_2),
+            torch.stack(batch_protein_label),
+            torch.stack(batch_protein_mask),
+        )
+
+    def collate_fn(self, batch):
+        maxlen = max([len(protein_label) for _, _, protein_label in batch])
+        feat_1, feat_2, protein_label, protein_mask = self.padding(batch, maxlen)
+
+        return feat_1, feat_2, protein_label, protein_mask
 
 
 class FineTuneDataset(Dataset):
@@ -149,169 +203,26 @@ class FineTuneDataset(Dataset):
         return input_seqs, protein_label, protein_mask
 
 
-def prottrans_embedding(ID_list, seq_list, conf, device, normalize=True, ion_type="ZN"):
-    protein_features = {}
-    max_repr = np.load("script/ProtTrans_repr_max.npy")
-    min_repr = np.load("script/ProtTrans_repr_min.npy")
-    if conf.data.precomputed_feature:
-        for id in ID_list:
-            seq_emd = np.load(
-                conf.data.precomputed_feature
-                + "/{}_ProtTrans/{}.npy".format(ion_type, id)
-            )
-            if normalize:
-                seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
-            protein_features[id] = seq_emd
-
-        return protein_features
-
-    if conf.data.save_feature:
-        feat_path = conf.output_path + "/{}_ProtTrans".format(ion_type)
-        os.makedirs(feat_path, exist_ok=True)
-
-    # Load the vocabulary and ProtT5-XL-UniRef50 Model
-    tokenizer = T5Tokenizer.from_pretrained(
-        "Rostlab/prot_t5_xl_uniref50", do_lower_case=False
-    )
-    model = T5EncoderModel.from_pretrained("Rostlab/prot_t5_xl_uniref50")
-    gc.collect()
-
-    # Load the model into CPU/GPU and switch to inference mode
-    model = model.to(device)
-    model = model.eval()
-    batch_size = conf.training.feature_batch_size
-    # Extract feature of one batch each time
-    for i in tqdm(range(0, len(ID_list), batch_size)):
-        if i + batch_size <= len(ID_list):
-            batch_ID_list = ID_list[i : i + batch_size]
-            batch_seq_list = seq_list[i : i + batch_size]
-        else:
-            batch_ID_list = ID_list[i:]
-            batch_seq_list = seq_list[i:]
-
-        # Load sequences and map rarely occured amino acids (U,Z,O,B) to (X)
-        batch_seq_list = [
-            re.sub(r"[UZOB]", "X", " ".join(list(sequence)))
-            for sequence in batch_seq_list
-        ]
-
-        # Tokenize, encode sequences and load it into GPU if avilabile
-        ids = tokenizer.batch_encode_plus(
-            batch_seq_list, add_special_tokens=True, padding=True
-        )
-        input_ids = torch.tensor(ids["input_ids"]).to(device)
-        attention_mask = torch.tensor(ids["attention_mask"]).to(device)
-
-        # Extract sequence features and load it into CPU if needed
-        with torch.no_grad():
-            embedding = model(input_ids=input_ids, attention_mask=attention_mask)
-        embedding = embedding.last_hidden_state.detach().cpu().numpy()
-
-        # Remove padding (\<pad>) and special tokens (\</s>) that is added by ProtT5-XL-UniRef50 model
-        for seq_num in range(len(embedding)):
-            seq_len = (attention_mask[seq_num] == 1).sum()
-            seq_emd = embedding[seq_num][: seq_len - 1]
-            if conf.data.save_feature:
-                np.save(feat_path + "/" + batch_ID_list[seq_num], seq_emd)
-            # Normalization
-            seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
-            protein_features[batch_ID_list[seq_num]] = seq_emd
-
-    return protein_features
-
-
-def load_evoformer_embedding(
-    ID_list, precomputed_feature_path, normalize=True, ion_type="ZN"
-):
-    protein_features = {}
-    max_repr = np.load("script/Evoformer_repr_max.npy")
-    min_repr = np.load("script/Evoformer_repr_min.npy")
-    # max_repr = np.load("script/Evoformer_pair_repr_max.npy")
-    # min_repr = np.load("script/Evoformer_pair_repr_min.npy")
-    for id in ID_list:
-        feature = np.load(
-            precomputed_feature_path + "/{}_Evoformer/{}.npz".format(ion_type, id)
-        )
-        # seq_emd = np.concatenate((feature["single"], feature["pair"]), axis=1)
-        seq_emd = feature["single"]
-        # seq_emd = feature["pair"]
-        if normalize:
-            seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
-        protein_features[id] = seq_emd
-
-    return protein_features
-
-
-def composite_embedding(
-    ID_list, precomputed_feature_path, normalize=True, ion_type="ZN"
-):
-    max_repr_evo = np.load("script/Evoformer_repr_max.npy")
-    min_repr_evo = np.load("script/Evoformer_repr_min.npy")
-    max_repr_prot = np.load("script/ProtTrans_repr_max.npy")
-    min_repr_prot = np.load("script/ProtTrans_repr_min.npy")
-    min_repr = np.concatenate((min_repr_prot, min_repr_evo))
-    max_repr = np.concatenate((max_repr_prot, max_repr_evo))
-    protein_features = {}
-    for id in ID_list:
-        feature_evo = np.load(
-            precomputed_feature_path + "/{}_Evoformer/{}.npz".format(ion_type, id)
-        )
-        feature_prot = np.load(
-            precomputed_feature_path + "/{}_ProtTrans/{}.npy".format(ion_type, id)
-        )
-        seq_emd = np.concatenate((feature_prot, feature_evo["single"]), axis=1)
-        if normalize:
-            seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
-        protein_features[id] = seq_emd
-
-    return protein_features
-
-
-def feature_extraction(
-    ID_list, seq_list, conf, device, ion_type="ZN", model_name="ProtTrans"
-):
-    assert model_name in ["Evoformer", "Composite", "ProtTrans"], "Invalid model name"
-    if model_name == "Evoformer":
-        assert (
-            conf.data.precomputed_feature
-        ), "No online Evoformer embedding support yet"
-        protein_features = load_evoformer_embedding(
-            ID_list,
-            conf.data.precomputed_feature,
-            normalize=conf.data.normalize,
-            ion_type=ion_type,
-        )
-    elif model_name == "ProtTrans":
-        protein_features = prottrans_embedding(
-            ID_list,
-            seq_list,
-            conf,
-            device,
-            normalize=conf.data.normalize,
-            ion_type=ion_type,
-        )
-    elif model_name == "Composite":
-        protein_features = composite_embedding(
-            ID_list,
-            conf.data.precomputed_feature,
-            normalize=conf.data.normalize,
-            ion_type=ion_type,
-        )
-
-    return protein_features
-
-
-def data_loader(conf, device, random_seed=0, ion_type="ZN"):
+def prep_dataset(conf, device, ion_type="ZN", tokenizer=None):
+    assert conf.data.data_type in ["original", "finetune", "multi_modal"]
     fasta_path = conf.data.data_path + "/{}_train.fa".format(ion_type)
     ID_list, seq_list, label_list = process_fasta(fasta_path, conf.data.max_seq_len)
     protein_features = feature_extraction(
         ID_list, seq_list, conf, device, ion_type=ion_type, model_name=conf.model.name
     )
-    pred_dict = {"ID": ID_list, "Sequence": seq_list, "Label": label_list}
-    pred_df = pd.DataFrame(pred_dict)
     pos_weight = calculate_pos_weight(label_list)
+    if conf.data.data_type == "original":
+        dataset = MetalDataset(ID_list, seq_list, label_list, protein_features)
+    elif conf.data.data_type == "finetune":
+        assert tokenizer is not None, "Invalid tokenizer"
+        dataset = FineTuneDataset(ID_list, seq_list, label_list, tokenizer)
+    elif conf.data.data_type == "multi_modal":
+        dataset = MultiModalDataset(ID_list, seq_list, label_list, protein_features)
 
-    dataset = MetalDataset(pred_df, protein_features, conf.model.feature_dim)
+    return dataset, pos_weight
+
+
+def prep_dataloader(dataset, conf, random_seed=0, ion_type="ZN"):
     n_val = int(len(dataset) * conf.training.val_ratio)
     n_train = len(dataset) - n_val
     train_dataset, val_dataset = torch.utils.data.random_split(
@@ -341,7 +252,7 @@ def data_loader(conf, device, random_seed=0, ion_type="ZN"):
         num_workers=8,
     )
 
-    return train_dataloader, val_dataloader, pos_weight
+    return train_dataloader, val_dataloader
 
 
 def finetune_data_loader(conf, tokenizer, random_seed=0, ion_type="ZN"):
