@@ -8,32 +8,25 @@
     "data":
         {
         "data_path": "datasets",
-        "data_type": "multi_modal",
+        "data_type": "original",
         "max_seq_len": 2000,
         "precomputed_feature": "precomputed_embedding",
         "normalize": 1,
         "save_feature": 0
         },
     "model": {
-        "name": "MultiModal",
-        "feature_dim_1": 1024,
-        "feature_dim_2": 384,
+        "name": "ProtTrans",
         "hidden_dim": 64,
         "num_encoder_layers": 2,
         "num_heads": 4,
-        "augment_eps": 0.1,
-        "dropout": 0.3,
-        "attn_mask": 1,
+        "augment_eps": 0.05,
+        "dropout": 0.2,
         "ion_type": "CA"
     },
     "training": 
         {
-        "optimizer": "AdamW",
-         "learning_rate": 5e-4,
          "val_ratio": 0.25,
          "feature_batch_size": 4,
-         "batch_size": 64,
-         "epochs": 15,
-         "weight_decay": 2e-2
+         "batch_size": 64
         }
 }

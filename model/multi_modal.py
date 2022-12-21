@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from model.modules.transformer import TransformerEncoder
 
+
 class MULTModel(nn.Module):
     def __init__(self, conf):
         """
@@ -31,23 +32,27 @@ class MULTModel(nn.Module):
         )
 
         # 2. Crossmodal Attentions
-        self.trans_l_with_a = self.get_network(self_type="la")          
+        self.trans_l_with_a = self.get_network(self_type="la")
         self.trans_a_with_l = self.get_network(self_type="al")
-                
+
         # 3. Self Attentions (Could be replaced by LSTMs, GRUs, etc.)
         #    [e.g., self.trans_x_mem = nn.LSTM(self.d_x, self.d_x, 1)
-        self.trans_l_mem = self.get_network(self_type="l_mem", layers=self.encoder_layers)
-        self.trans_a_mem = self.get_network(self_type="a_mem", layers=self.encoder_layers)
-      
+        self.trans_l_mem = self.get_network(
+            self_type="l_mem", layers=self.encoder_layers
+        )
+        self.trans_a_mem = self.get_network(
+            self_type="a_mem", layers=self.encoder_layers
+        )
+
         # Projection layers
         self.proj1 = nn.Linear(combined_dim, combined_dim)
         self.proj2 = nn.Linear(combined_dim, combined_dim)
         self.out_layer = nn.Linear(combined_dim, output_dim)
-        
+
         # dropout layers
         self.dropout = nn.Dropout(p=self.dropout_prob)
         self.relu = nn.LeakyReLU()
-        
+
     def get_network(self, self_type="l", layers=-1):
         if self_type in ["l", "al"]:
             embed_dim = self.d_l
@@ -57,7 +62,7 @@ class MULTModel(nn.Module):
             embed_dim = self.d_l
         elif self_type == "a_mem":
             embed_dim = self.d_a
-       
+
         else:
             raise ValueError("Unknown network type")
 
@@ -75,19 +80,21 @@ class MULTModel(nn.Module):
         """
         x_l = self.dropout(x_l.transpose(1, 2))
         x_a = x_a.transpose(1, 2)
-      
+
         # Project the textual/visual/audio features
-        proj_x_l = x_l if self.orig_d_l == self.d_l else self.proj_l(x_l) # Dimension (N, d_l, L)
+        proj_x_l = (
+            x_l if self.orig_d_l == self.d_l else self.proj_l(x_l)
+        )  # Dimension (N, d_l, L)
         proj_x_a = x_a if self.orig_d_a == self.d_a else self.proj_a(x_a)
-        
+
         proj_x_a = proj_x_a.permute(2, 0, 1)
         proj_x_l = proj_x_l.permute(2, 0, 1)
-        
+
         # A --> L
         h_l_with_as = self.trans_l_with_a(
-                proj_x_l, proj_x_a, proj_x_a
-            )  # Dimension (L, N, d_l)
-        h_ls = self.trans_l_mem(h_l_with_as)  
+            proj_x_l, proj_x_a, proj_x_a
+        )  # Dimension (L, N, d_l)
+        h_ls = self.trans_l_mem(h_l_with_as)
         last_h_l = last_hs = h_ls
 
         # L --> A

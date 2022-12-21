@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .multi_modal import MULTModel
 
+
 class Self_Attention(nn.Module):
     def __init__(self, num_hidden, num_heads=4):
         super().__init__()
@@ -85,12 +86,14 @@ class LMetalSite_Test(nn.Module):
         num_heads=4,
         augment_eps=0.05,
         dropout=0.2,
+        ion_type="ZN",
     ):
-        super(LMetalSite, self).__init__()
+        super(LMetalSite_Test, self).__init__()
 
         # Hyperparameters
         self.augment_eps = augment_eps
-
+        assert ion_type in ["ZN", "CA", "MG", "MN"]
+        self.ion_type = ion_type
         # Embedding layers
         self.input_block = nn.Sequential(
             nn.LayerNorm(feature_dim, eps=1e-6),
@@ -141,11 +144,14 @@ class LMetalSite_Test(nn.Module):
         for layer in self.encoder_layers:
             h_V = layer(h_V, mask)
 
-        logits_ZN = self.FC_CA2(F.leaky_relu(self.FC_CA1(h_V))).squeeze(-1)
-        logits_CA = self.FC_CA2(F.leaky_relu(self.FC_CA1(h_V))).squeeze(-1)
-        logits_MG = self.FC_MG2(F.leaky_relu(self.FC_MG1(h_V))).squeeze(-1)
-        logits_MN = self.FC_MN2(F.leaky_relu(self.FC_MN1(h_V))).squeeze(-1)
-        logits = torch.cat((logits_ZN, logits_CA, logits_MG, logits_MN), 1)
+        if self.ion_type == "ZN":
+            logits = self.FC_ZN2(F.leaky_relu(self.FC_ZN1(h_V))).squeeze(-1)
+        elif self.ion_type == "CA":
+            logits = self.FC_CA2(F.leaky_relu(self.FC_CA1(h_V))).squeeze(-1)
+        elif self.ion_type == "MN":
+            logits = self.FC_MN2(F.leaky_relu(self.FC_MN1(h_V))).squeeze(-1)
+        elif self.ion_type == "MG":
+            logits = self.FC_MG2(F.leaky_relu(self.FC_MG1(h_V))).squeeze(-1)
 
         return logits
 
@@ -252,6 +258,7 @@ class LMetalSite(nn.Module):
 
         return logits
 
+
 class LMetalSiteMultiModal(nn.Module):
     def __init__(
         self,
@@ -299,12 +306,8 @@ class LMetalSiteMultiModal(nn.Module):
     def forward(self, feat_a, feat_b):
         # Data augmentation
         if self.training and self.augment_eps > 0:
-            feat_a = feat_a + self.augment_eps * torch.randn_like(
-                feat_a
-            )
-            feat_b = feat_b + self.augment_eps * torch.randn_like(
-                feat_b
-            )
+            feat_a = feat_a + self.augment_eps * torch.randn_like(feat_a)
+            feat_b = feat_b + self.augment_eps * torch.randn_like(feat_b)
         output, _ = self.encoding_module(feat_a, feat_b)
         # h_V = self.input_block(protein_feat)
         # h_V = self.hidden_block(h_V)
@@ -322,4 +325,3 @@ class LMetalSiteMultiModal(nn.Module):
             logits = self.MG_head(output).squeeze(-1)
 
         return logits
-
