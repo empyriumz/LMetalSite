@@ -146,15 +146,15 @@ def multimodal_embedding(
 
 
 def feature_extraction(
-    ID_list, seq_list, conf, device, ion_type="ZN", model_name="ProtTrans"
+    ID_list, seq_list, conf, device, ion_type="ZN", feature_name="ProtTrans"
 ):
-    assert model_name in [
+    assert feature_name in [
         "Evoformer",
         "Composite",
         "MultiModal",
         "ProtTrans",
-    ], "Invalid model name"
-    if model_name == "Evoformer":
+    ], "Invalid feature name"
+    if feature_name == "Evoformer":
         assert (
             conf.data.precomputed_feature
         ), "No online Evoformer embedding support yet"
@@ -164,7 +164,7 @@ def feature_extraction(
             normalize=conf.data.normalize,
             ion_type=ion_type,
         )
-    elif model_name == "ProtTrans":
+    elif feature_name == "ProtTrans":
         protein_features = prottrans_embedding(
             ID_list,
             seq_list,
@@ -173,14 +173,14 @@ def feature_extraction(
             normalize=conf.data.normalize,
             ion_type=ion_type,
         )
-    elif model_name == "Composite":
+    elif feature_name == "Composite":
         protein_features = composite_embedding(
             ID_list,
             conf.data.precomputed_feature,
             normalize=conf.data.normalize,
             ion_type=ion_type,
         )
-    elif model_name == "MultiModal":
+    elif feature_name == "MultiModal":
         protein_features = multimodal_embedding(
             ID_list,
             conf.data.precomputed_feature,

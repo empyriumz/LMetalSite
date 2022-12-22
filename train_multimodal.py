@@ -9,11 +9,9 @@ from timeit import default_timer as timer
 from torchmetrics.classification import (
     BinaryAUROC,
     BinaryAveragePrecision,
-    BinaryF1Score,
 )
 from pathlib import Path
 from script.utils import (
-    add_alphafold_args,
     logging_related,
     parse_arguments,
 )
@@ -149,28 +147,27 @@ if __name__ == "__main__":
     start = timer()
     parser = argparse.ArgumentParser()
     args = parse_arguments(parser)
-    add_alphafold_args(parser)
-    output_path = (
-        Path("./results/")
-        / Path(args.config).stem
-        / Path(str(datetime.datetime.now())[:16].replace(" ", "-").replace(":", "-"))
-    )
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    """
-    Read configuration and dump the configuration to output dir
-    """
     with open(args.config, "r") as f:
         conf = json.load(f)
-    conf["output_path"] = "./" + str(output_path)
-    with open(str(output_path) + "/config.json", "w") as f:
-        json.dump(conf, f, indent=4)
-
     conf = config_dict.ConfigDict(conf)
+    output_path = None
+    if not conf.general.debug:
+        output_path = (
+            Path("./results/")
+            / Path(args.config).stem
+            / Path(
+                str(datetime.datetime.now())[:16].replace(" ", "-").replace(":", "-")
+            )
+        )
+        output_path.mkdir(parents=True, exist_ok=True)
+        conf["output_path"] = "./" + str(output_path)
+        with open(str(output_path) + "/config.json", "w") as f:
+            json.dump(conf, f, indent=4)
+
     """
     logging related part
     """
-    logging_related(output_path)
+    logging_related(output_path=output_path, debug=conf.general.debug)
     main(conf)
 
     end = timer()

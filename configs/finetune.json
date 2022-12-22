@@ -8,11 +8,14 @@
     "data":
         {
         "data_path": "datasets",
+        "data_type": "finetune",
         "precomputed_feature": "precomputed_embedding",
         "max_seq_len": 5000,
+        "normalize": 1,
         "save_feature": 0
         },
     "model": {
+        "name": "ProtTrans",
         "feature_dim": 1024,
         "hidden_dim": 64,
         "num_encoder_layers": 2,

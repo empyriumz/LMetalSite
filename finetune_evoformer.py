@@ -81,13 +81,13 @@ def main(conf):
         else "cpu"
     )
     model_name = conf.model.alphafold_model
-    evoformer_config = model_config(model_name, train=True)
+    evoformer_config = model_config(model_name, train=True, low_prec=True)
     backbone_model = Evoformer(evoformer_config)
     npz_path = os.path.join(conf.model.jax_param_path, "params_" + model_name + ".npz")
     import_evoformer_weights_(backbone_model, npz_path, version=model_name)
     model = MetalIonSiteEvoformer(backbone_model, conf).to(device)
-    model = model.to(device)
-
+    for para in model.parameters():
+        para.requires_grad_(True)
     template_featurizer = None
     data_processor = data_pipeline.DataPipeline(
         template_featurizer=template_featurizer,

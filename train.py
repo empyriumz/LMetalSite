@@ -12,12 +12,13 @@ from torchmetrics.classification import (
 )
 from pathlib import Path
 from script.utils import (
-    add_alphafold_args,
     logging_related,
     parse_arguments,
 )
 from data.data_process import prep_dataset, prep_dataloader
-from model.model import LMetalSite
+from model.model import LMetalSite, LMetalSiteBase
+
+LOG_INTERVAL = 50
 
 
 def main(conf):
@@ -32,22 +33,22 @@ def main(conf):
     logging.info(
         "Training begins at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
     )
-    if conf.model.name == "Evoformer":
+    if conf.data.feature == "Evoformer":
         conf.model.feature_dim = 384
-    elif conf.model.name == "ProtTrans":
+    elif conf.data.feature == "ProtTrans":
         conf.model.feature_dim = 1024
-    elif conf.model.name == "Composite":
+    elif conf.data.feature == "Composite":
         conf.model.feature_dim = 1408
+    else:
+        raise ValueError("No feature available")
+
     # Load LMetalSite model
-    model = LMetalSite(
-        conf.model.feature_dim,
-        conf.model.hidden_dim,
-        conf.model.num_encoder_layers,
-        conf.model.num_heads,
-        conf.model.augment_eps,
-        conf.model.dropout,
-        conf.model.ion_type,
-    ).to(device)
+    if conf.model.name == "base":
+        model = LMetalSiteBase(conf.model).to(device)
+    elif conf.model.name == "transformer":
+        model = LMetalSite(conf.model).to(device)
+    else:
+        raise NotImplementedError("Invalid model name")
 
     if conf.training.optimizer == "Adam":
         optimizer = torch.optim.Adam(
@@ -65,17 +66,15 @@ def main(conf):
 
     metric_auc = BinaryAUROC(thresholds=None)
     metric_auprc = BinaryAveragePrecision(thresholds=None)
-    log_interval = 2 * conf.training.batch_size
     model.training = True  # adding Gaussian noise to embedding
     for ion in ["ZN", "MN", "MG", "CA"]:
         dataset, pos_weight = prep_dataset(conf, device, ion_type=ion)
         train_dataloader, val_dataloader = prep_dataloader(
             dataset, conf, random_seed=RANDOM_SEED, ion_type=ion
         )
-        # loss_func = torch.nn.BCEWithLogitsLoss(
-        #     pos_weight=torch.sqrt(torch.tensor(pos_weight))
-        # )
-        loss_func = torch.nn.BCEWithLogitsLoss()
+        loss_func = torch.nn.BCEWithLogitsLoss(
+            pos_weight=torch.sqrt(torch.tensor(pos_weight))
+        )
         model.ion_type = ion
         for epoch in range(conf.training.epochs):
             train_loss = 0.0
@@ -98,7 +97,7 @@ def main(conf):
                 running_auprc = metric_auprc(outputs, labels)
                 running_loss = loss_.detach().cpu().numpy()
                 train_loss += running_loss
-                if i % log_interval == 0 and i > 0:
+                if i % LOG_INTERVAL == 0 and i > 0:
                     logging.info(
                         "Running train loss: {:.4f}, auc: {:.3f}, auprc: {:.3f}".format(
                             running_loss, running_auc, running_auprc
@@ -156,28 +155,28 @@ if __name__ == "__main__":
     start = timer()
     parser = argparse.ArgumentParser()
     args = parse_arguments(parser)
-    add_alphafold_args(parser)
-    output_path = (
-        Path("./results/")
-        / Path(args.config).stem
-        / Path(str(datetime.datetime.now())[:16].replace(" ", "-").replace(":", "-"))
-    )
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    """
-    Read configuration and dump the configuration to output dir
-    """
     with open(args.config, "r") as f:
         conf = json.load(f)
-    conf["output_path"] = "./" + str(output_path)
-    with open(str(output_path) + "/config.json", "w") as f:
-        json.dump(conf, f, indent=4)
+
+    output_path = None
+    if not conf["general"]["debug"]:
+        output_path = (
+            Path("./results/")
+            / Path(args.config).stem
+            / Path(
+                str(datetime.datetime.now())[:16].replace(" ", "-").replace(":", "-")
+            )
+        )
+        output_path.mkdir(parents=True, exist_ok=True)
+        conf["output_path"] = "./" + str(output_path)
+        with open(str(output_path) + "/config.json", "w") as f:
+            json.dump(conf, f, indent=4)
 
     conf = config_dict.ConfigDict(conf)
     """
     logging related part
     """
-    logging_related(output_path)
+    logging_related(output_path=output_path, debug=conf.general.debug)
     main(conf)
 
     end = timer()

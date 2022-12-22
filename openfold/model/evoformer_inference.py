@@ -82,43 +82,25 @@ class Evoformer(nn.Module):
             feats["msa_feat"],
             inplace_safe=inplace_safe,
         )
-        # The recycling embedder is memory-intensive, so we offload first
-        if self.globals.offload_inference and inplace_safe:
-            m = m.cpu()
-            z = z.cpu()
 
-        if self.config.extra_msa.enabled:
-            # [*, S_e, N, C_e]
-            a = self.extra_msa_embedder(build_extra_msa_feat(feats))
-            z = self.extra_msa_stack(
-                    a,
-                    z,
-                    msa_mask=feats["extra_msa_mask"].to(dtype=m.dtype),
-                    chunk_size=self.globals.chunk_size,
-                    use_lma=self.globals.use_lma,
-                    pair_mask=pair_mask.to(dtype=m.dtype),
-                    inplace_safe=inplace_safe,
-                    _mask_trans=self.config._mask_trans,
-                )
+        # if self.config.extra_msa.enabled:
+        #     # [*, S_e, N, C_e]
+        #     a = self.extra_msa_embedder(build_extra_msa_feat(feats))
+        #     z = self.extra_msa_stack(
+        #             a,
+        #             z,
+        #             msa_mask=feats["extra_msa_mask"].to(dtype=m.dtype),
+        #             chunk_size=self.globals.chunk_size,
+        #             use_lma=self.globals.use_lma,
+        #             pair_mask=pair_mask.to(dtype=m.dtype),
+        #             inplace_safe=inplace_safe,
+        #             _mask_trans=self.config._mask_trans,
+        #         )
         # Run MSA + pair embeddings through the trunk of the network
         # m: [*, S, N, C_m]
         # z: [*, N, N, C_z]
         # s: [*, N, C_s]
-        if self.globals.offload_inference:
-            input_tensors = [m, z]
-            del m, z
-            m, z, s = self.evoformer._forward_offload(
-                input_tensors,
-                msa_mask=msa_mask.to(dtype=input_tensors[0].dtype),
-                pair_mask=pair_mask.to(dtype=input_tensors[1].dtype),
-                chunk_size=self.globals.chunk_size,
-                use_lma=self.globals.use_lma,
-                _mask_trans=self.config._mask_trans,
-            )
-
-            del input_tensors
-        else:
-            m, z, s = self.evoformer(
+        m, z, s = self.evoformer(
                 m,
                 z,
                 msa_mask=msa_mask.to(dtype=m.dtype),

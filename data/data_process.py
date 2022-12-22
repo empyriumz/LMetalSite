@@ -208,7 +208,12 @@ def prep_dataset(conf, device, ion_type="ZN", tokenizer=None):
     fasta_path = conf.data.data_path + "/{}_train.fa".format(ion_type)
     ID_list, seq_list, label_list = process_fasta(fasta_path, conf.data.max_seq_len)
     protein_features = feature_extraction(
-        ID_list, seq_list, conf, device, ion_type=ion_type, model_name=conf.model.name
+        ID_list,
+        seq_list,
+        conf,
+        device,
+        ion_type=ion_type,
+        feature_name=conf.data.feature,
     )
     pos_weight = calculate_pos_weight(label_list)
     if conf.data.data_type == "original":
