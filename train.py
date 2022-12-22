@@ -50,16 +50,33 @@ def main(conf):
     else:
         raise NotImplementedError("Invalid model name")
 
+    if conf.training.pretrained_encoder:
+        checkpoint = torch.load(conf.training.pretrained_encoder)
+        logging.info("load encoder from {}".format(conf.training.pretrained_encoder))
+        model.input_block.load_state_dict(checkpoint["encoder_state"])
+
     if conf.training.optimizer == "Adam":
         optimizer = torch.optim.Adam(
-            model.parameters(),
+            [
+                {"params": model.params.classifier.parameters()},
+                {
+                    "params": model.params.encoder.parameters(),
+                    "lr": conf.training.encoder_learning_rate,
+                },
+            ],
             betas=(0.9, 0.99),
             lr=conf.training.learning_rate,
             weight_decay=conf.training.weight_decay,
         )
     else:
         optimizer = torch.optim.AdamW(
-            model.parameters(),
+            [
+                {"params": model.params.classifier.parameters()},
+                {
+                    "params": model.params.encoder.parameters(),
+                    "lr": conf.training.encoder_learning_rate,
+                },
+            ],
             lr=conf.training.learning_rate,
             weight_decay=conf.training.weight_decay,
         )

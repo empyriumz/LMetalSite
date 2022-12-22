@@ -104,7 +104,8 @@ class LMetalSiteBase(nn.Module):
                 0, nn.Sigmoid()
             )  # add a sigmoid for normalization Evoformer only
         self.input_block = nn.Sequential(*modules)
-
+        if conf.fix_encoder:
+            self.input_block.requires_grad_(False)
         assert conf.ion_type in ["ZN", "CA", "MG", "MN"]
         self.ion_type = conf.ion_type
 
@@ -128,6 +129,14 @@ class LMetalSiteBase(nn.Module):
             nn.Linear(hidden_dim, hidden_dim, bias=True),
             nn.LeakyReLU(),
             nn.Linear(hidden_dim, 1, bias=True),
+        )
+        self.params = nn.ModuleDict(
+            {
+                "encoder": nn.ModuleList([self.input_block]),
+                "classifier": nn.ModuleList(
+                    [self.MN_head, self.MG_head, self.CA_head, self.ZN_head]
+                ),
+            }
         )
         # Initialization
         for p in self.parameters():

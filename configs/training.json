@@ -8,7 +8,7 @@
     "data":
         {
         "data_path": "datasets",
-        "feature": "Composite",
+        "feature": "ProtTrans",
         "data_type": "original",
         "max_seq_len": 2000,
         "precomputed_feature": "precomputed_embedding",
@@ -20,13 +20,16 @@
         "hidden_dim": 128,
         "num_encoder_layers": 2,
         "num_heads": 4,
-        "augment_eps": 0.15,
+        "augment_eps": 0.1,
         "dropout": 0.3,
-        "ion_type": "CA"
+        "ion_type": "CA",
+        "fix_encoder": 0
     },
     "training": 
         {
          "optimizer": "AdamW",
+         "pretrained_encoder": "results/autoencoder/2022-12-22-19-00/autoencoder_ProtTrans_epoch_10_loss_0.002.pt",
+         "encoder_learning_rate": 2e-4,
          "learning_rate": 4e-4,
          "val_ratio": 0.25,
          "feature_batch_size": 4,
