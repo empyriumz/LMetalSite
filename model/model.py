@@ -2,79 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .multi_modal import MULTModel
-
-
-class Self_Attention(nn.Module):
-    def __init__(self, num_hidden, num_heads=4):
-        super().__init__()
-        self.num_heads = num_heads
-        self.attention_head_size = int(num_hidden / num_heads)
-        self.all_head_size = self.num_heads * self.attention_head_size
-
-    def transpose_for_scores(self, x):
-        new_x_shape = x.size()[:-1] + (self.num_heads, self.attention_head_size)
-        x = x.view(*new_x_shape)
-        return x.permute(0, 2, 1, 3)
-
-    def forward(self, q, k, v, mask=None):
-        q = self.transpose_for_scores(q)  # [bsz, heads, protein_len, hid]
-        k = self.transpose_for_scores(k)
-        v = self.transpose_for_scores(v)
-
-        attention_scores = torch.matmul(q, k.transpose(-1, -2))
-
-        if mask is not None:
-            attention_mask = (1.0 - mask) * -10000
-            attention_scores = attention_scores + attention_mask.unsqueeze(1).unsqueeze(
-                1
-            )
-
-        attention_scores = nn.Softmax(dim=-1)(attention_scores)
-
-        outputs = torch.matmul(attention_scores, v)
-
-        outputs = outputs.permute(0, 2, 1, 3).contiguous()
-        new_output_shape = outputs.size()[:-2] + (self.all_head_size,)
-        outputs = outputs.view(*new_output_shape)
-        return outputs
-
-
-class PositionWiseFeedForward(nn.Module):
-    def __init__(self, num_hidden, num_ff):
-        super(PositionWiseFeedForward, self).__init__()
-        self.W_in = nn.Linear(num_hidden, num_ff, bias=True)
-        self.W_out = nn.Linear(num_ff, num_hidden, bias=True)
-
-    def forward(self, h_V):
-        h = F.leaky_relu(self.W_in(h_V))
-        h = self.W_out(h)
-        return h
-
-
-class TransformerLayer(nn.Module):
-    def __init__(self, num_hidden=64, num_heads=4, dropout=0.2):
-        super(TransformerLayer, self).__init__()
-        self.dropout = nn.Dropout(dropout)
-        self.norm = nn.ModuleList(
-            [nn.LayerNorm(num_hidden, eps=1e-6) for _ in range(2)]
-        )
-
-        self.attention = Self_Attention(num_hidden, num_heads)
-        self.dense = PositionWiseFeedForward(num_hidden, num_hidden * 4)
-
-    def forward(self, h_V, mask=None):
-        # Self-attention
-        dh = self.attention(h_V, h_V, h_V, mask)
-        h_V = self.norm[0](h_V + self.dropout(dh))
-
-        # Position-wise feedforward
-        dh = self.dense(h_V)
-        h_V = self.norm[1](h_V + self.dropout(dh))
-
-        if mask is not None:
-            mask = mask.unsqueeze(-1)
-            h_V = mask * h_V
-        return h_V
+from .transformer import TransformerLayer
 
 
 class LMetalSite_Test(nn.Module):
@@ -164,24 +92,18 @@ class LMetalSiteBase(nn.Module):
         self.augment_eps = conf.augment_eps
         self.training = training
         hidden_dim = conf.hidden_dim
-        # Embedding layers
-        if (
-            conf.feature_dim == 384
-        ):  # hard encode a sigmoid for evoformer to replace min-max normalization
-            self.input_block = nn.Sequential(
-                nn.Sigmoid(),
-                nn.LayerNorm(conf.feature_dim, eps=1e-6),
-                nn.Dropout(conf.dropout),
-                nn.Linear(conf.feature_dim, hidden_dim),
-                nn.LeakyReLU(),
-            )
-        else:
-            self.input_block = nn.Sequential(
-                nn.LayerNorm(conf.feature_dim, eps=1e-6),
-                nn.Dropout(conf.dropout),
-                nn.Linear(conf.feature_dim, hidden_dim),
-                nn.LeakyReLU(),
-            )
+        feature_dim = conf.feature_dim
+        modules = [
+            nn.LayerNorm(feature_dim, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(feature_dim, hidden_dim),
+            nn.LeakyReLU(),
+        ]
+        if feature_dim == 384:
+            modules.insert(
+                0, nn.Sigmoid()
+            )  # add a sigmoid for normalization Evoformer only
+        self.input_block = nn.Sequential(*modules)
 
         assert conf.ion_type in ["ZN", "CA", "MG", "MN"]
         self.ion_type = conf.ion_type
@@ -278,9 +200,53 @@ class LMetalSiteMultiModal(LMetalSiteBase):
     def forward(self, feat_a, feat_b):
         feat_a = self.add_noise(feat_a)
         feat_b = self.add_noise(feat_b)
-
         output = self.encoding_module(feat_a, feat_b)
-
         logits = self.get_logits(output)
 
         return logits
+
+
+class LMetalSiteEncoder(nn.Module):
+    def __init__(self, conf, training=True):
+        super(LMetalSiteEncoder, self).__init__()
+
+        # Hyperparameters
+        self.augment_eps = conf.augment_eps
+        self.training = training
+        hidden_dim = conf.hidden_dim
+        feature_dim = conf.feature_dim
+        modules = [
+            nn.LayerNorm(feature_dim, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(feature_dim, hidden_dim),
+            nn.LeakyReLU(),
+        ]
+        if feature_dim == 384:
+            modules.insert(0, nn.Sigmoid())
+        self.input_block = nn.Sequential(*modules)
+
+        self.decoder = nn.Sequential(
+            nn.LayerNorm(hidden_dim, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(hidden_dim, feature_dim),
+            nn.LeakyReLU(),
+        )
+        assert conf.ion_type in ["ZN", "CA", "MG", "MN"]
+        self.ion_type = conf.ion_type
+
+        # Initialization
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
+    def add_noise(self, input):
+        if self.training and self.augment_eps > 0:
+            input = input + self.augment_eps * torch.randn_like(input)
+        return input
+
+    def forward(self, protein_feat):
+        protein_feat = self.add_noise(protein_feat)
+        h_V = self.input_block(protein_feat)
+        h_V = self.decoder(h_V)
+
+        return h_V
