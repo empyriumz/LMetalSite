@@ -8,7 +8,6 @@
     "data":
         {
         "data_path": "datasets",
-        "precomputed_feature": "precomputed_embedding",
         "max_seq_len": 5000,
         "save_feature": 0
         },
@@ -28,7 +27,7 @@
          "backbone_learning_rate": 5e-6,
          "val_ratio": 0.25,
          "batch_size": 1,
-         "epochs": 15,
-         "weight_decay": 1e-2
+         "epochs": 6,
+         "weight_decay": 2e-2
         }
 }

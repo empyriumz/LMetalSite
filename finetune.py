@@ -6,7 +6,6 @@ from ml_collections import config_dict
 from pathlib import Path
 import datetime
 import logging
-import re
 from script.utils import (
     logging_related,
     parse_arguments,
@@ -30,7 +29,7 @@ def train(conf):
         else "cpu"
     )
     batch_size = conf.training.batch_size
-    log_interval = 4 * batch_size
+    log_interval = 16 * batch_size
 
     backbone_model = T5EncoderModel.from_pretrained("Rostlab/prot_t5_xl_uniref50")
 
@@ -71,21 +70,11 @@ def train(conf):
         )
         for epoch in range(conf.training.epochs):
             train_loss, train_auc, train_auprc = 0.0, 0.0, 0.0
-            model.train()
-            for i, j in enumerate(range(0, len(ID_list), batch_size)):
-                batch_seq_list = seq_list[j : j + batch_size]
-                batch_label_list = label_list[j : j + batch_size]
-                # Load sequences and map rarely occurred amino acids (U,Z,O,B) to (X)
-                batch_seq_list = [
-                    re.sub(r"[UZOB]", "X", " ".join(list(sequence)))
-                    for sequence in batch_seq_list
-                ]
-                ids = tokenizer.batch_encode_plus(
-                    batch_seq_list, add_special_tokens=True, padding=True
-                )
-                input_ids = torch.tensor(ids["input_ids"]).to(device)
-                masks = torch.tensor(ids["attention_mask"]).to(device)
-                labels = padding(batch_label_list, input_ids.size(1)).to(device)
+            for i, batch_data in enumerate(train_dataloader):
+                input_ids, labels, masks = batch_data
+                input_ids = input_ids.to(device)
+                masks = masks.to(device)
+                labels = labels.to(device)
                 optimizer.zero_grad(set_to_none=True)
                 outputs = model(input_ids=input_ids, attention_mask=masks)
                 loss_ = loss_func(outputs * masks, labels)
@@ -115,12 +104,13 @@ def train(conf):
             with torch.no_grad():
                 model.training = False
                 val_loss, val_auc, val_auprc = 0.0, 0.0, 0.0
-                for i, batch_data in tqdm(enumerate(val_dataloader)):
+                for i, batch_data in enumerate(val_dataloader):
                     input_ids, labels, masks = batch_data
                     input_ids = input_ids.to(device)
                     masks = masks.to(device)
                     labels = labels.to(device)
                     outputs = model(input_ids=input_ids, attention_mask=masks)
+                    loss_ = loss_func(outputs * masks, labels)
                     labels = torch.masked_select(labels, masks.bool())
                     outputs = torch.sigmoid(torch.masked_select(outputs, masks.bool()))
                     running_auc = metric_auc(outputs, labels).detach().cpu().numpy()

@@ -1,4 +1,3 @@
-import string
 import re
 import torch
 import os
@@ -8,10 +7,8 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
-try:
-    from transformers import T5EncoderModel, T5Tokenizer
-except:
-    pass
+from transformers import T5EncoderModel, T5Tokenizer
+from .utils import calculate_pos_weight, process_fasta
 
 
 class MetalDatasetTest(Dataset):
