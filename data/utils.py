@@ -6,11 +6,113 @@ import os
 import gc
 from tqdm import tqdm
 from transformers import T5EncoderModel, T5Tokenizer
+from esm import pretrained
+from fairscale.nn.data_parallel import FullyShardedDataParallel as FSDP
+from fairscale.nn.wrap import enable_wrap, wrap
 
 max_repr_evo = np.load("script/Evoformer_repr_max.npy")
 min_repr_evo = np.load("script/Evoformer_repr_min.npy")
 max_repr_prot = np.load("script/ProtTrans_repr_max.npy")
 min_repr_prot = np.load("script/ProtTrans_repr_min.npy")
+max_repr_esm = np.load("script/ESM_repr_max.npy")
+min_repr_esm = np.load("script/ESM_repr_min.npy")
+
+
+def load_esm_model(backend_name):
+    if backend_name == "esm_tiny":  # embed_dim=320
+        backbone_model, alphabet = pretrained.esm2_t6_8M_UR50D()
+    elif backend_name == "esm_small":  # embed_dim=640
+        backbone_model, alphabet = pretrained.esm2_t30_150M_UR50D()
+    elif backend_name == "esm_medium":  # embed_dim=1280
+        backbone_model, alphabet = pretrained.esm2_t33_650M_UR50D()
+    elif backend_name == "esm_large":  # embed_dim=1280
+        backbone_model, alphabet = pretrained.esm2_t36_3B_UR50D()
+    elif backend_name == "esm_1b":  # embed_dim=1280
+        backbone_model, alphabet = pretrained.esm1b_t33_650M_UR50S()
+        backbone_model.embed_dim = 1280
+    else:
+        raise ValueError("Wrong backbone model")
+
+    return backbone_model, alphabet
+
+
+def esm_embedding(ID_list, seq_list, conf, device, normalize=True, ion_type="ZN"):
+    protein_features = {}
+    if conf.data.precomputed_feature:
+        for id in ID_list:
+            tmp = np.load(
+                conf.data.precomputed_feature + "/{}_esm/{}.npz".format(ion_type, id)
+            )
+            seq_emd = tmp["embedding"]
+            if normalize:
+                seq_emd = (seq_emd - min_repr_esm) / (max_repr_esm - min_repr_esm)
+            protein_features[id] = seq_emd
+
+        return protein_features
+
+    if conf.data.save_feature:
+        feat_path = conf.output_path + "/{}_esm".format(ion_type)
+        os.makedirs(feat_path, exist_ok=True)
+    # init the distributed world with world_size 1
+    url = "tcp://localhost:23456"
+    torch.distributed.init_process_group(
+        backend="nccl", init_method=url, world_size=1, rank=0
+    )
+    # initialize the model with FSDP wrapper
+    fsdp_params = dict(
+        mixed_precision=True,
+        flatten_parameters=True,
+        state_dict_device=torch.device("cpu"),  # reduce GPU mem usage
+        # state_dict_device=device,
+        cpu_offload=True,  # enable cpu offloading
+    )
+
+    with enable_wrap(wrapper_cls=FSDP, **fsdp_params):
+        model, alphabet = load_esm_model("esm_large")
+        # model.to(device)
+        batch_converter = alphabet.get_batch_converter()
+        model.eval()
+
+        # Wrap each layer in FSDP separately
+        for name, child in model.named_children():
+            if name == "layers":
+                for layer_name, layer in child.named_children():
+                    wrapped_layer = wrap(layer)
+                    setattr(child, layer_name, wrapped_layer)
+        model = wrap(model)
+
+    data = list(zip(ID_list, seq_list))
+    batch_size = conf.training.feature_batch_size
+    with torch.no_grad():
+        for j in tqdm(range(0, len(data), batch_size)):
+            partital_data = data[j : j + batch_size]
+            batch_labels, _, batch_tokens = batch_converter(partital_data)
+            result = model(
+                batch_tokens.to(device),
+                repr_layers=[len(model.layers)],
+                return_contacts=True,
+            )
+            embedding = (
+                result["representations"][len(model.layers)].detach().cpu().numpy()
+            )
+            mask = result["mask"].detach().cpu().numpy()
+            contact = result["contacts"].detach().cpu().numpy()
+            for seq_num in range(len(embedding)):
+                seq_len = mask[seq_num].sum()
+                # get rid of cls and eos token
+                seq_emd = embedding[seq_num][1 : (seq_len - 1)]
+                # contact prediction already excluded eos and cls
+                seq_contact = contact[seq_num][: (seq_len - 2), : (seq_len - 2)]
+
+                if conf.data.save_feature:
+                    # np.save(feat_path + "/" + batch_labels[seq_num], seq_emd)
+                    # protein_features[batch_labels[seq_num]] = seq_emd
+                    np.savez(
+                        feat_path + "/" + batch_labels[seq_num],
+                        embedding=seq_emd,
+                        contact=seq_contact,
+                    )
+                    protein_features[batch_labels[seq_num]] = [seq_emd, seq_contact]
 
 
 def composite_embedding(
@@ -153,6 +255,7 @@ def feature_extraction(
         "Composite",
         "MultiModal",
         "ProtTrans",
+        "ESM",
     ], "Invalid feature name"
     if feature_name == "Evoformer":
         assert (
@@ -177,6 +280,15 @@ def feature_extraction(
         protein_features = composite_embedding(
             ID_list,
             conf.data.precomputed_feature,
+            normalize=conf.data.normalize,
+            ion_type=ion_type,
+        )
+    elif feature_name == "ESM":
+        protein_features = esm_embedding(
+            ID_list,
+            seq_list,
+            conf,
+            device,
             normalize=conf.data.normalize,
             ion_type=ion_type,
         )

@@ -1,0 +1,37 @@
+{
+    "general": 
+        {
+         "seed": 1, 
+         "gpu_id": 1, 
+         "debug": 0
+        },
+    "data":
+        {
+        "data_path": "datasets",
+        "feature": "ProtTrans",
+        "data_type": "original",
+        "max_seq_len": 2000,
+        "precomputed_feature": "precomputed_embedding",
+        "normalize": 1,
+        "save_feature": 0
+        },
+    "model": {
+        "name": "base",
+        "hidden_dim": 128,
+        "num_encoder_layers": 2,
+        "num_heads": 4,
+        "augment_eps": 0.1,
+        "dropout": 0.3,
+        "ion_type": "CA"
+    },
+    "training": 
+        {
+         "optimizer": "AdamW",
+         "learning_rate": 4e-4,
+         "val_ratio": 0.25,
+         "feature_batch_size": 4,
+         "batch_size": 64,
+         "epochs": 10,
+         "weight_decay": 2e-2
+        }
+}

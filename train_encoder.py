@@ -6,17 +6,13 @@ import logging
 from tqdm import tqdm
 from ml_collections import config_dict
 from timeit import default_timer as timer
-from torchmetrics.classification import (
-    BinaryAUROC,
-    BinaryAveragePrecision,
-)
 from pathlib import Path
 from script.utils import (
     logging_related,
     parse_arguments,
 )
 from data.data_process import prep_dataset, prep_dataloader
-from model.model import LMetalSite, LMetalSiteBase
+from model.model import LMetalSiteEncoder
 
 LOG_INTERVAL = 50
 
@@ -44,126 +40,82 @@ def main(conf):
     else:
         raise ValueError("No feature available")
 
-    # Load LMetalSite model
-    if conf.model.name == "base":
-        model = LMetalSiteBase(conf.model).to(device)
-    elif conf.model.name == "transformer":
-        model = LMetalSite(conf.model).to(device)
-    else:
-        raise NotImplementedError("Invalid model name")
-
-    if conf.training.pretrained_encoder:
-        checkpoint = torch.load(conf.training.pretrained_encoder)
-        logging.info("load encoder from {}".format(conf.training.pretrained_encoder))
-        model.input_block.load_state_dict(checkpoint["encoder_state"])
+    model = LMetalSiteEncoder(conf.model).to(device)
 
     if conf.training.optimizer == "Adam":
         optimizer = torch.optim.Adam(
-            [
-                {"params": model.params.classifier.parameters()},
-                {
-                    "params": model.params.encoder.parameters(),
-                    "lr": conf.training.encoder_learning_rate,
-                },
-            ],
+            model.parameters(),
             betas=(0.9, 0.99),
             lr=conf.training.learning_rate,
             weight_decay=conf.training.weight_decay,
         )
     else:
         optimizer = torch.optim.AdamW(
-            [
-                {"params": model.params.classifier.parameters()},
-                {
-                    "params": model.params.encoder.parameters(),
-                    "lr": conf.training.encoder_learning_rate,
-                },
-            ],
+            model.parameters(),
             lr=conf.training.learning_rate,
             weight_decay=conf.training.weight_decay,
         )
-
-    metric_auc = BinaryAUROC(thresholds=None)
-    metric_auprc = BinaryAveragePrecision(thresholds=None)
+    best_loss = 1000
     model.training = True  # adding Gaussian noise to embedding
     for ion in ["ZN", "MN", "MG", "CA"]:
-        dataset, pos_weight = prep_dataset(conf, device, ion_type=ion)
+        dataset, _ = prep_dataset(conf, device, ion_type=ion)
         train_dataloader, val_dataloader = prep_dataloader(
             dataset, conf, random_seed=RANDOM_SEED, ion_type=ion
         )
-        loss_func = torch.nn.BCEWithLogitsLoss(
-            pos_weight=torch.sqrt(torch.tensor(pos_weight))
-        )
+        loss_func = torch.nn.MSELoss()
         model.ion_type = ion
         for epoch in range(conf.training.epochs):
             train_loss = 0.0
-            all_outputs, all_labels = [], []
             for i, batch_data in tqdm(enumerate(train_dataloader)):
-                feats, labels, masks, _ = batch_data
+                feats, _, _, _ = batch_data
                 optimizer.zero_grad(set_to_none=True)
                 feats = feats.to(device)
-                masks = masks.to(device)
-                labels = labels.to(device)
-                outputs = model(feats, masks)
-                loss_ = loss_func(outputs * masks, labels)
+                outputs = model(feats)
+                loss_ = loss_func(outputs, feats)
                 loss_.backward()
                 optimizer.step()
-                labels = torch.masked_select(labels, masks.bool())
-                outputs = torch.sigmoid(torch.masked_select(outputs, masks.bool()))
-                all_outputs.append(outputs)
-                all_labels.append(labels)
-                running_auc = metric_auc(outputs, labels)
-                running_auprc = metric_auprc(outputs, labels)
                 running_loss = loss_.detach().cpu().numpy()
                 train_loss += running_loss
                 if i % LOG_INTERVAL == 0 and i > 0:
-                    logging.info(
-                        "Running train loss: {:.4f}, auc: {:.3f}, auprc: {:.3f}".format(
-                            running_loss, running_auc, running_auprc
-                        )
-                    )
-            all_outputs = torch.cat(all_outputs)
-            all_labels = torch.cat(all_labels)
-            train_auc = metric_auc(all_outputs, all_labels).detach().cpu().numpy()
-            train_auprc = metric_auprc(all_outputs, all_labels).detach().cpu().numpy()
+                    logging.info("Running train loss: {:.4f}".format(running_loss))
             logging.info(
-                "Epoch {} train loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
+                "Epoch {} train loss {:.4f}".format(
                     epoch + 1,
                     train_loss / (i + 1),
-                    train_auc,
-                    train_auprc,
                 )
             )
             model.eval()
             with torch.no_grad():
                 model.training = False
                 val_loss = 0.0
-                all_outputs, all_labels = [], []
                 for i, batch_data in tqdm(enumerate(val_dataloader)):
-                    feats, labels, masks, _ = batch_data
+                    feats, _, _, _ = batch_data
                     feats = feats.to(device)
-                    masks = masks.to(device)
-                    labels = labels.to(device)
-                    outputs = model(feats, masks)
-                    labels = torch.masked_select(labels, masks.bool())
-                    outputs = torch.sigmoid(torch.masked_select(outputs, masks.bool()))
-                    all_outputs.append(outputs)
-                    all_labels.append(labels)
+                    outputs = model(feats)
+                    loss_ = loss_func(outputs, feats)
                     running_loss = loss_.detach().cpu().numpy()
                     val_loss += running_loss
 
-            all_outputs = torch.cat(all_outputs)
-            all_labels = torch.cat(all_labels)
-            val_auc = metric_auc(all_outputs, all_labels).detach().cpu().numpy()
-            val_auprc = metric_auprc(all_outputs, all_labels).detach().cpu().numpy()
+            val_loss = val_loss / (i + 1)
             logging.info(
-                "Epoch {} val loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
+                "Epoch {} val loss {:.4f}".format(
                     epoch + 1,
-                    val_loss / (i + 1),
-                    val_auc,
-                    val_auprc,
+                    val_loss,
                 )
             )
+            if val_loss < best_loss and val_loss < 0.0025 and not conf.general.debug:
+                best_loss = val_loss
+                state = {
+                    "encoder_state": model.input_block.state_dict(),
+                }
+                file_name = (
+                    conf.output_path
+                    + "/"
+                    + "autoencoder_{}_epoch_{}".format(conf.data.feature, epoch + 1)
+                    + "_loss_{:.3f}".format(val_loss)
+                )
+                torch.save(state, file_name + ".pt")
+                logging.info("\n------------ Save the best model ------------\n")
 
     logging.info(
         "Training is done at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
