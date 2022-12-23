@@ -15,7 +15,7 @@ from torchmetrics.classification import (
     BinaryAUROC,
     BinaryAveragePrecision,
 )
-from data.data_process import finetune_data_loader
+from data.data_process import prep_dataset, prep_dataloader
 from model.finetune_model import MetalIonSiteClassification
 
 
@@ -62,8 +62,11 @@ def train(conf):
     for ion in ["MN", "ZN", "MG", "CA"]:
         model.training = True
         model.ion_type = ion
-        train_dataloader, val_dataloader, pos_weight = finetune_data_loader(
-            conf, tokenizer, random_seed=RANDOM_SEED, ion_type=ion
+        dataset, pos_weight = prep_dataset(
+            conf, device, tokenizer=tokenizer, ion_type=ion
+        )
+        train_dataloader, val_dataloader = prep_dataloader(
+            dataset, conf, random_seed=RANDOM_SEED, ion_type=ion
         )
         loss_func = torch.nn.BCEWithLogitsLoss(
             pos_weight=torch.sqrt(torch.tensor(pos_weight))

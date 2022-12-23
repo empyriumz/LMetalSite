@@ -723,7 +723,7 @@ class EvoformerStack(nn.Module):
             blocks = [partial(block_with_cache_clear, b) for b in blocks]
 
         if chunk_size is not None and self.chunk_size_tuner is not None:
-            assert not self.training
+            # assert not self.training
             tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
                 representative_fn=blocks[0],
                 # We don't want to write in-place during chunk tuning runs

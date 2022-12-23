@@ -2,36 +2,31 @@
     "general": 
         {
          "seed": 1, 
-         "gpu_id": 0, 
+         "gpu_id": 1, 
          "debug": 0
         },
     "data":
         {
         "data_path": "datasets",
-        "data_type": "finetune",
+        "data_type": "original",
+        "max_seq_len": 2000,
         "precomputed_feature": "precomputed_embedding",
-        "max_seq_len": 5000,
         "normalize": 1,
         "save_feature": 0
         },
     "model": {
         "name": "ProtTrans",
-        "feature_dim": 1024,
         "hidden_dim": 64,
         "num_encoder_layers": 2,
         "num_heads": 4,
-        "augment_eps": 0.1,
-        "dropout": 0.3,
+        "augment_eps": 0.05,
+        "dropout": 0.2,
         "ion_type": "CA"
     },
     "training": 
         {
-         "learning_rate": 2e-4,
-         "fix_backbone_weight": 0,
-         "backbone_learning_rate": 5e-6,
          "val_ratio": 0.25,
-         "batch_size": 1,
-         "epochs": 6,
-         "weight_decay": 2e-2
+         "feature_batch_size": 4,
+         "batch_size": 64
         }
 }

@@ -2,7 +2,7 @@
     "general": 
         {
          "seed": 1, 
-         "gpu_id": 0, 
+         "gpu_id": 1, 
          "debug": 0
         },
     "data":
@@ -11,8 +11,9 @@
         "feature": "ProtTrans",
         "data_type": "original",
         "max_seq_len": 2000,
-        "precomputed_feature": "evoformer_embedding_output/MG_train",
-        "save_feature": 1
+        "precomputed_feature": "precomputed_embedding",
+        "normalize": 1,
+        "save_feature": 0
         },
     "model": {
         "name": "base",
@@ -21,19 +22,16 @@
         "num_heads": 4,
         "augment_eps": 0.1,
         "dropout": 0.3,
-        "ion_type": "CA",
-        "fix_encoder": 0
+        "ion_type": "CA"
     },
     "training": 
         {
          "optimizer": "AdamW",
-         "pretrained_encoder": "results/autoencoder/2022-12-22-19-00/autoencoder_ProtTrans_epoch_10_loss_0.002.pt",
-         "encoder_learning_rate": 2e-4,
          "learning_rate": 4e-4,
          "val_ratio": 0.25,
          "feature_batch_size": 4,
          "batch_size": 64,
-         "epochs": 20,
+         "epochs": 10,
          "weight_decay": 2e-2
         }
 }

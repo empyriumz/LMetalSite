@@ -87,21 +87,20 @@ def add_alphafold_args(parser: argparse.ArgumentParser):
     parser.add_argument("--release_dates_path", type=str, default=None)
 
 
-def logging_related(output_path):
-    logger = logging.getLogger()
-    log_filename = str(output_path) + "/training.log"
+def logging_related(output_path=None, debug=True):
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setLevel(logging.DEBUG)
     stdout_handler.setFormatter(formatter)
-
-    file_handler = logging.FileHandler(log_filename)
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
-
-    logger.addHandler(file_handler)
     logger.addHandler(stdout_handler)
-    logging.info("Output path: {}".format(output_path))
+
+    if not debug:
+        assert output_path is not None, "need valid log output path"
+        log_filename = str(output_path) + "/training.log"
+        file_handler = logging.FileHandler(log_filename)
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+        logging.info("Output path: {}".format(output_path))

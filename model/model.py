@@ -1,79 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-
-class Self_Attention(nn.Module):
-    def __init__(self, num_hidden, num_heads=4):
-        super().__init__()
-        self.num_heads = num_heads
-        self.attention_head_size = int(num_hidden / num_heads)
-        self.all_head_size = self.num_heads * self.attention_head_size
-
-    def transpose_for_scores(self, x):
-        new_x_shape = x.size()[:-1] + (self.num_heads, self.attention_head_size)
-        x = x.view(*new_x_shape)
-        return x.permute(0, 2, 1, 3)
-
-    def forward(self, q, k, v, mask=None):
-        q = self.transpose_for_scores(q)  # [bsz, heads, protein_len, hid]
-        k = self.transpose_for_scores(k)
-        v = self.transpose_for_scores(v)
-
-        attention_scores = torch.matmul(q, k.transpose(-1, -2))
-
-        if mask is not None:
-            attention_mask = (1.0 - mask) * -10000
-            attention_scores = attention_scores + attention_mask.unsqueeze(1).unsqueeze(
-                1
-            )
-
-        attention_scores = nn.Softmax(dim=-1)(attention_scores)
-
-        outputs = torch.matmul(attention_scores, v)
-
-        outputs = outputs.permute(0, 2, 1, 3).contiguous()
-        new_output_shape = outputs.size()[:-2] + (self.all_head_size,)
-        outputs = outputs.view(*new_output_shape)
-        return outputs
-
-
-class PositionWiseFeedForward(nn.Module):
-    def __init__(self, num_hidden, num_ff):
-        super(PositionWiseFeedForward, self).__init__()
-        self.W_in = nn.Linear(num_hidden, num_ff, bias=True)
-        self.W_out = nn.Linear(num_ff, num_hidden, bias=True)
-
-    def forward(self, h_V):
-        h = F.leaky_relu(self.W_in(h_V))
-        h = self.W_out(h)
-        return h
-
-
-class TransformerLayer(nn.Module):
-    def __init__(self, num_hidden=64, num_heads=4, dropout=0.2):
-        super(TransformerLayer, self).__init__()
-        self.dropout = nn.Dropout(dropout)
-        self.norm = nn.ModuleList(
-            [nn.LayerNorm(num_hidden, eps=1e-6) for _ in range(2)]
-        )
-
-        self.attention = Self_Attention(num_hidden, num_heads)
-        self.dense = PositionWiseFeedForward(num_hidden, num_hidden * 4)
-
-    def forward(self, h_V, mask=None):
-        # Self-attention
-        dh = self.attention(h_V, h_V, h_V, mask)
-        h_V = self.norm[0](h_V + self.dropout(dh))
-
-        # Position-wise feedforward
-        dh = self.dense(h_V)
-        h_V = self.norm[1](h_V + self.dropout(dh))
-
-        if mask is not None:
-            mask = mask.unsqueeze(-1)
-            h_V = mask * h_V
-        return h_V
+from .multi_modal import MULTModel
+from .transformer import TransformerLayer
 
 
 class LMetalSite_Test(nn.Module):
@@ -85,12 +14,14 @@ class LMetalSite_Test(nn.Module):
         num_heads=4,
         augment_eps=0.05,
         dropout=0.2,
+        ion_type="ZN",
     ):
-        super(LMetalSite, self).__init__()
+        super(LMetalSite_Test, self).__init__()
 
         # Hyperparameters
         self.augment_eps = augment_eps
-
+        assert ion_type in ["ZN", "CA", "MG", "MN"]
+        self.ion_type = ion_type
         # Embedding layers
         self.input_block = nn.Sequential(
             nn.LayerNorm(feature_dim, eps=1e-6),
@@ -141,174 +72,42 @@ class LMetalSite_Test(nn.Module):
         for layer in self.encoder_layers:
             h_V = layer(h_V, mask)
 
-        logits_ZN = self.FC_CA2(F.leaky_relu(self.FC_CA1(h_V))).squeeze(-1)
-        logits_CA = self.FC_CA2(F.leaky_relu(self.FC_CA1(h_V))).squeeze(-1)
-        logits_MG = self.FC_MG2(F.leaky_relu(self.FC_MG1(h_V))).squeeze(-1)
-        logits_MN = self.FC_MN2(F.leaky_relu(self.FC_MN1(h_V))).squeeze(-1)
-        logits = torch.cat((logits_ZN, logits_CA, logits_MG, logits_MN), 1)
-
-        return logits
-
-
-class LMetalSite(nn.Module):
-    def __init__(
-        self,
-        feature_dim,
-        hidden_dim=64,
-        num_encoder_layers=2,
-        num_heads=4,
-        augment_eps=0.05,
-        dropout=0.2,
-        ion_type="ZN",
-        training=True,
-    ):
-        super(LMetalSite, self).__init__()
-
-        # Hyperparameters
-        self.augment_eps = augment_eps
-        self.training = training
-        # Embedding layers
-        if (
-            feature_dim == 384
-        ):  # hard encode a sigmoid for evoformer to replace min-max normalization
-            self.input_block = nn.Sequential(
-                nn.Sigmoid(),
-                nn.LayerNorm(feature_dim, eps=1e-6),
-                nn.Linear(feature_dim, hidden_dim),
-                nn.LeakyReLU(),
-            )
-        else:
-            self.input_block = nn.Sequential(
-                nn.LayerNorm(feature_dim, eps=1e-6),
-                nn.Linear(feature_dim, hidden_dim),
-                nn.LeakyReLU(),
-            )
-
-        self.hidden_block = nn.Sequential(
-            nn.LayerNorm(hidden_dim, eps=1e-6),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU(),
-            nn.LayerNorm(hidden_dim, eps=1e-6),
-        )
-
-        # Encoder layers
-        self.encoder_layers = nn.ModuleList(
-            [
-                TransformerLayer(hidden_dim, num_heads, dropout)
-                for _ in range(num_encoder_layers)
-            ]
-        )
-        assert ion_type in ["ZN", "CA", "MG", "MN"]
-        self.ion_type = ion_type
-
-        # ion-specific layers
-        self.ZN_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim, bias=True),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_dim, 1, bias=True),
-        )
-        # self.ZN_head.requires_grad_(False)
-        self.CA_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim, bias=True),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_dim, 1, bias=True),
-        )
-        # self.CA_head.requires_grad_(False)
-        self.MG_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim, bias=True),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_dim, 1, bias=True),
-        )
-        # self.MG_head.requires_grad_(False)
-        self.MN_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim, bias=True),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_dim, 1, bias=True),
-        )
-        # self.MN_head.requires_grad_(False)
-        # Initialization
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-
-        # if self.ion_type == "ZN":
-        #     self.ZN_head.requires_grad_(True)
-        # elif self.ion_type == "CA":
-        #     self.CA_head.requires_grad_(True)
-        # elif self.ion_type == "MN":
-        #     self.MN_head.requires_grad_(True)
-        # elif self.ion_type == "MG":
-        #     self.MG_head.requires_grad_(True)
-
-    def forward(self, protein_feat, mask):
-        # Data augmentation
-        if self.training and self.augment_eps > 0:
-            protein_feat = protein_feat + self.augment_eps * torch.randn_like(
-                protein_feat
-            )
-
-        h_V = self.input_block(protein_feat)
-        h_V = self.hidden_block(h_V)
-
-        for layer in self.encoder_layers:
-            h_V = layer(h_V, mask)
-
         if self.ion_type == "ZN":
-            logits = self.ZN_head(h_V).squeeze(-1)
+            logits = self.FC_ZN2(F.leaky_relu(self.FC_ZN1(h_V))).squeeze(-1)
         elif self.ion_type == "CA":
-            logits = self.CA_head(h_V).squeeze(-1)
+            logits = self.FC_CA2(F.leaky_relu(self.FC_CA1(h_V))).squeeze(-1)
         elif self.ion_type == "MN":
-            logits = self.MN_head(h_V).squeeze(-1)
+            logits = self.FC_MN2(F.leaky_relu(self.FC_MN1(h_V))).squeeze(-1)
         elif self.ion_type == "MG":
-            logits = self.MG_head(h_V).squeeze(-1)
+            logits = self.FC_MG2(F.leaky_relu(self.FC_MG1(h_V))).squeeze(-1)
 
         return logits
 
 
-class LMetalSiteFineTune(nn.Module):
-    def __init__(
-        self,
-        backbone_model,
-        feature_dim,
-        hidden_dim=64,
-        num_encoder_layers=2,
-        num_heads=4,
-        augment_eps=0.05,
-        dropout=0.2,
-        ion_type="ZN",
-        training=True,
-    ):
-        super(LMetalSite, self).__init__()
+class LMetalSiteBase(nn.Module):
+    def __init__(self, conf, training=True):
+        super(LMetalSiteBase, self).__init__()
 
         # Hyperparameters
-        self.backbone_model = backbone_model
-        self.augment_eps = augment_eps
+        self.augment_eps = conf.augment_eps
         self.training = training
-        # Embedding layers
-        self.input_block = nn.Sequential(
+        hidden_dim = conf.hidden_dim
+        feature_dim = conf.feature_dim
+        modules = [
             nn.LayerNorm(feature_dim, eps=1e-6),
+            nn.Dropout(conf.dropout),
             nn.Linear(feature_dim, hidden_dim),
             nn.LeakyReLU(),
-        )
-
-        self.hidden_block = nn.Sequential(
-            nn.LayerNorm(hidden_dim, eps=1e-6),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU(),
-            nn.LayerNorm(hidden_dim, eps=1e-6),
-        )
-
-        # Encoder layers
-        self.encoder_layers = nn.ModuleList(
-            [
-                TransformerLayer(hidden_dim, num_heads, dropout)
-                for _ in range(num_encoder_layers)
-            ]
-        )
-        assert ion_type in ["ZN", "CA", "MG", "MN"]
-        self.ion_type = ion_type
+        ]
+        if feature_dim == 384:
+            modules.insert(
+                0, nn.Sigmoid()
+            )  # add a sigmoid for normalization Evoformer only
+        self.input_block = nn.Sequential(*modules)
+        if conf.fix_encoder:
+            self.input_block.requires_grad_(False)
+        assert conf.ion_type in ["ZN", "CA", "MG", "MN"]
+        self.ion_type = conf.ion_type
 
         # ion-specific layers
         self.ZN_head = nn.Sequential(
@@ -331,31 +130,132 @@ class LMetalSiteFineTune(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(hidden_dim, 1, bias=True),
         )
+        self.params = nn.ModuleDict(
+            {
+                "encoder": nn.ModuleList([self.input_block]),
+                "classifier": nn.ModuleList(
+                    [self.MN_head, self.MG_head, self.CA_head, self.ZN_head]
+                ),
+            }
+        )
         # Initialization
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, protein_feat, mask):
-        # Data augmentation
+    def add_noise(self, input):
         if self.training and self.augment_eps > 0:
-            protein_feat = protein_feat + self.augment_eps * torch.randn_like(
-                protein_feat
-            )
+            input = input + self.augment_eps * torch.randn_like(input)
+        return input
 
+    def get_logits(self, input):
+        if self.ion_type == "ZN":
+            logits = self.ZN_head(input).squeeze(-1)
+        elif self.ion_type == "CA":
+            logits = self.CA_head(input).squeeze(-1)
+        elif self.ion_type == "MN":
+            logits = self.MN_head(input).squeeze(-1)
+        elif self.ion_type == "MG":
+            logits = self.MG_head(input).squeeze(-1)
+
+        return logits
+
+    def forward(self, protein_feat, mask):
+        protein_feat = self.add_noise(protein_feat)
+        h_V = self.input_block(protein_feat)
+        logits = self.get_logits(h_V)
+
+        return logits
+
+
+class LMetalSite(LMetalSiteBase):
+    def __init__(self, conf, training=True):
+        super(LMetalSite, self).__init__(conf, training=training)
+        hidden_dim = conf.hidden_dim
+        self.hidden_block = nn.Sequential(
+            nn.LayerNorm(hidden_dim, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LeakyReLU(),
+            nn.LayerNorm(hidden_dim, eps=1e-6),
+        )
+
+        # Encoder layers
+        self.encoder_layers = nn.ModuleList(
+            [
+                TransformerLayer(hidden_dim, conf.num_heads, conf.dropout)
+                for _ in range(conf.num_encoder_layers)
+            ]
+        )
+
+    def forward(self, protein_feat, mask):
+        protein_feat = self.add_noise(protein_feat)
         h_V = self.input_block(protein_feat)
         h_V = self.hidden_block(h_V)
 
         for layer in self.encoder_layers:
             h_V = layer(h_V, mask)
 
-        if self.ion_type == "ZN":
-            logits = self.ZN_head(h_V).squeeze(-1)
-        elif self.ion_type == "CA":
-            logits = self.CA_head(h_V).squeeze(-1)
-        elif self.ion_type == "MN":
-            logits = self.MN_head(h_V).squeeze(-1)
-        elif self.ion_type == "MG":
-            logits = self.MG_head(h_V).squeeze(-1)
+        logits = self.get_logits(h_V)
+        return logits
+
+
+class LMetalSiteMultiModal(LMetalSiteBase):
+    def __init__(self, conf, training=True):
+        super(LMetalSiteMultiModal, self).__init__(conf, training=training)
+
+        self.encoding_module = MULTModel(conf)
+
+    def forward(self, feat_a, feat_b):
+        feat_a = self.add_noise(feat_a)
+        feat_b = self.add_noise(feat_b)
+        output = self.encoding_module(feat_a, feat_b)
+        logits = self.get_logits(output)
 
         return logits
+
+
+class LMetalSiteEncoder(nn.Module):
+    def __init__(self, conf, training=True):
+        super(LMetalSiteEncoder, self).__init__()
+
+        # Hyperparameters
+        self.augment_eps = conf.augment_eps
+        self.training = training
+        hidden_dim = conf.hidden_dim
+        feature_dim = conf.feature_dim
+        modules = [
+            nn.LayerNorm(feature_dim, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(feature_dim, hidden_dim),
+            nn.LeakyReLU(),
+        ]
+        if feature_dim == 384:
+            modules.insert(0, nn.Sigmoid())
+        self.input_block = nn.Sequential(*modules)
+
+        self.decoder = nn.Sequential(
+            nn.LayerNorm(hidden_dim, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(hidden_dim, feature_dim),
+            nn.LeakyReLU(),
+        )
+        assert conf.ion_type in ["ZN", "CA", "MG", "MN"]
+        self.ion_type = conf.ion_type
+
+        # Initialization
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
+    def add_noise(self, input):
+        if self.training and self.augment_eps > 0:
+            input = input + self.augment_eps * torch.randn_like(input)
+        return input
+
+    def forward(self, protein_feat):
+        protein_feat = self.add_noise(protein_feat)
+        h_V = self.input_block(protein_feat)
+        h_V = self.decoder(h_V)
+
+        return h_V
