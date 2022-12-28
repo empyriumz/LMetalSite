@@ -37,8 +37,10 @@ def main(conf):
         conf.model.feature_dim = 1024
     elif conf.model.name == "Composite":
         conf.model.feature_dim = 1408
+    elif conf.model.name == "MultiModal":
+        conf.model.feature_dim = 1
     # Load LMetalSite model
-    model = LMetalSiteMultiModal(conf).to(device)
+    model = LMetalSiteMultiModal(conf.model).to(device)
 
     if conf.training.optimizer == "Adam":
         optimizer = torch.optim.Adam(

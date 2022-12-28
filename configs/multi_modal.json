@@ -8,6 +8,7 @@
     "data":
         {
         "data_path": "datasets",
+        "feature": "MultiModal",
         "data_type": "multi_modal",
         "max_seq_len": 2000,
         "precomputed_feature": "precomputed_embedding",
@@ -16,15 +17,16 @@
         },
     "model": {
         "name": "MultiModal",
-        "feature_dim_1": 1024,
-        "feature_dim_2": 384,
+        "feature_dim_1": 2560,
+        "feature_dim_2": 1000,
         "hidden_dim": 64,
         "num_encoder_layers": 2,
         "num_heads": 4,
         "augment_eps": 0.1,
         "dropout": 0.3,
         "attn_mask": 1,
-        "ion_type": "CA"
+        "ion_type": "CA",
+        "fix_encoder": 0
     },
     "training": 
         {

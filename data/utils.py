@@ -247,6 +247,24 @@ def multimodal_embedding(
     return protein_features
 
 
+def multimodal_embedding_contact_map(
+    ID_list, precomputed_feature_path, normalize=True, ion_type="ZN"
+):
+    protein_features = {}
+    for id in ID_list:
+        tmp = np.load(precomputed_feature_path + "/{}_esm/{}.npz".format(ion_type, id))
+        seq_emd = tmp["embedding"]
+        contact_map = tmp["contact"]
+        if normalize:
+            seq_emd = (seq_emd - min_repr_esm) / (max_repr_esm - min_repr_esm)
+        pad_shape = 1000 - contact_map.shape[0]
+        contact_map = np.pad(contact_map, ((0, pad_shape), (0, pad_shape)), "constant")
+        # seq_emd = np.pad(seq_emd, ((0, pad_shape), (0, 0)), 'constant')
+        protein_features[id] = [seq_emd, contact_map]
+
+    return protein_features
+
+
 def feature_extraction(
     ID_list, seq_list, conf, device, ion_type="ZN", feature_name="ProtTrans"
 ):
