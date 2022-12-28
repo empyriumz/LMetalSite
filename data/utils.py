@@ -10,7 +10,7 @@ def load_esm_model(backend_name):
         backbone_model, alphabet = pretrained.esm2_t30_150M_UR50D()
     elif backend_name == "esm_medium":  # embed_dim=1280
         backbone_model, alphabet = pretrained.esm2_t33_650M_UR50D()
-    elif backend_name == "esm_large":  # embed_dim=1280
+    elif backend_name == "esm_large":  # embed_dim=2560
         backbone_model, alphabet = pretrained.esm2_t36_3B_UR50D()
     elif backend_name == "esm_1b":  # embed_dim=1280
         backbone_model, alphabet = pretrained.esm1b_t33_650M_UR50S()
