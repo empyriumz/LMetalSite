@@ -2,16 +2,17 @@
     "general": 
         {
          "seed": 1, 
-         "gpu_id": 1, 
+         "gpu_id": 0, 
          "debug": 0
         },
     "data":
         {
         "data_path": "datasets",
+        "fasta_path": "datasets/uniref_50/short_0.fasta",
         "feature": "ProtTrans",
-        "data_type": "original",
-        "max_seq_len": 2000,
-        "precomputed_feature": "precomputed_embedding",
+        "data_type": "uniref",
+        "max_seq_len": 5000,
+        "precomputed_feature": "results/autoencoder/2022-12-28-18-39/ProtTrans",
         "normalize": 1,
         "save_feature": 0
         },
@@ -28,8 +29,8 @@
         {
          "optimizer": "AdamW",
          "learning_rate": 4e-4,
-         "val_ratio": 0.25,
-         "feature_batch_size": 4,
+         "val_ratio": 0.3,
+         "feature_batch_size": 16,
          "batch_size": 64,
          "epochs": 10,
          "weight_decay": 2e-2

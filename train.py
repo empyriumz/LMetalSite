@@ -99,7 +99,7 @@ def main(conf):
             train_loss = 0.0
             all_outputs, all_labels = [], []
             for i, batch_data in tqdm(enumerate(train_dataloader)):
-                feats, labels, masks, _ = batch_data
+                feats, labels, masks = batch_data
                 optimizer.zero_grad(set_to_none=True)
                 feats = feats.to(device)
                 masks = masks.to(device)
@@ -140,7 +140,7 @@ def main(conf):
                 val_loss = 0.0
                 all_outputs, all_labels = [], []
                 for i, batch_data in tqdm(enumerate(val_dataloader)):
-                    feats, labels, masks, _ = batch_data
+                    feats, labels, masks = batch_data
                     feats = feats.to(device)
                     masks = masks.to(device)
                     labels = labels.to(device)
