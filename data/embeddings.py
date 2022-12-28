@@ -32,7 +32,7 @@ def esm_embedding(ID_list, seq_list, conf, device, normalize=True, ion_type="ZN"
         return protein_features
 
     if conf.data.save_feature:
-        feat_path = conf.output_path + "/{}_esm".format(ion_type)
+        feat_path = conf.output_path + "/esm"
         os.makedirs(feat_path, exist_ok=True)
     # init the distributed world with world_size 1
     url = "tcp://localhost:23456"
@@ -71,29 +71,78 @@ def esm_embedding(ID_list, seq_list, conf, device, normalize=True, ion_type="ZN"
             result = model(
                 batch_tokens.to(device),
                 repr_layers=[len(model.layers)],
-                return_contacts=True,
+                return_contacts=False,
             )
             embedding = (
                 result["representations"][len(model.layers)].detach().cpu().numpy()
             )
             mask = result["mask"].detach().cpu().numpy()
-            contact = result["contacts"].detach().cpu().numpy()
+            # contact = result["contacts"].detach().cpu().numpy()
             for seq_num in range(len(embedding)):
                 seq_len = mask[seq_num].sum()
                 # get rid of cls and eos token
                 seq_emd = embedding[seq_num][1 : (seq_len - 1)]
                 # contact prediction already excluded eos and cls
-                seq_contact = contact[seq_num][: (seq_len - 2), : (seq_len - 2)]
+                # seq_contact = contact[seq_num][: (seq_len - 2), : (seq_len - 2)]
 
                 if conf.data.save_feature:
-                    # np.save(feat_path + "/" + batch_labels[seq_num], seq_emd)
-                    # protein_features[batch_labels[seq_num]] = seq_emd
-                    np.savez(
-                        feat_path + "/" + batch_labels[seq_num],
-                        embedding=seq_emd,
-                        contact=seq_contact,
-                    )
-                    protein_features[batch_labels[seq_num]] = [seq_emd, seq_contact]
+                    np.save(feat_path + "/" + batch_labels[seq_num], seq_emd)
+                    protein_features[batch_labels[seq_num]] = seq_emd
+                    # np.savez(
+                    #     feat_path + "/" + batch_labels[seq_num],
+                    #     embedding=seq_emd,
+                    #     contact=seq_contact,
+                    # )
+                    # protein_features[batch_labels[seq_num]] = [seq_emd, seq_contact]
+
+
+def esm_embedding_obsolete(
+    ID_list, seq_list, conf, device, normalize=True, ion_type="ZN"
+):
+    protein_features = {}
+    if conf.data.precomputed_feature:
+        for id in ID_list:
+            tmp = np.load(
+                conf.data.precomputed_feature + "/{}_esm/{}.npz".format(ion_type, id)
+            )
+            seq_emd = tmp["embedding"]
+            if normalize:
+                seq_emd = (seq_emd - min_repr_esm) / (max_repr_esm - min_repr_esm)
+            protein_features[id] = seq_emd
+
+        return protein_features
+
+    if conf.data.save_feature:
+        feat_path = conf.output_path + "/esm"
+        os.makedirs(feat_path, exist_ok=True)
+
+    model, alphabet = load_esm_model("esm_large")
+    model.to(device)
+    batch_converter = alphabet.get_batch_converter()
+    model.eval()
+    data = list(zip(ID_list, seq_list))
+    batch_size = conf.training.feature_batch_size
+    with torch.no_grad():
+        for j in tqdm(range(0, len(data), batch_size)):
+            partital_data = data[j : j + batch_size]
+            batch_labels, _, batch_tokens = batch_converter(partital_data)
+            result = model(
+                batch_tokens.to(device),
+                repr_layers=[len(model.layers)],
+                return_contacts=False,
+            )
+            embedding = (
+                result["representations"][len(model.layers)].detach().cpu().numpy()
+            )
+            mask = result["mask"].detach().cpu().numpy()
+            for seq_num in range(len(embedding)):
+                seq_len = mask[seq_num].sum()
+                # get rid of cls and eos token
+                seq_emd = embedding[seq_num][1 : (seq_len - 1)]
+
+                if conf.data.save_feature:
+                    np.save(feat_path + "/" + batch_labels[seq_num], seq_emd)
+                    protein_features[batch_labels[seq_num]] = seq_emd
 
 
 def composite_embedding(
@@ -138,7 +187,6 @@ def load_evoformer_embedding(
 def prottrans_embedding(ID_list, seq_list, conf, device, normalize=True, ion_type=None):
     protein_features = {}
     if conf.data.precomputed_feature:
-
         for id in ID_list:
             if ion_type is not None:
                 file_name = "/{}_ProtTrans/{}.npy".format(ion_type, id)
