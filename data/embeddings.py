@@ -157,9 +157,9 @@ def prottrans_embedding(ID_list, seq_list, conf, device, normalize=True, ion_typ
 
     # Load the vocabulary and ProtT5-XL-UniRef50 Model
     tokenizer = T5Tokenizer.from_pretrained(
-        "Rostlab/prot_t5_xl_uniref50", do_lower_case=False
+        "/hpcgpfs01/scratch/xdai/huggingface/prot_t5_xl_uniref50", do_lower_case=False
     )
-    model = T5EncoderModel.from_pretrained("Rostlab/prot_t5_xl_uniref50")
+    model = T5EncoderModel.from_pretrained("/hpcgpfs01/scratch/xdai/huggingface/prot_t5_xl_uniref50")
     gc.collect()
 
     # Load the model into CPU/GPU and switch to inference mode

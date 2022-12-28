@@ -8,7 +8,7 @@
     "data":
         {
         "data_path": "datasets",
-        "fasta_path": "datasets/uniref_50/short_2.fasta",
+        "fasta_path": "datasets/uniref_50/short_3_second.fasta",
         "feature": "ProtTrans",
         "data_type": "uniref",
         "max_seq_len": 5000,
@@ -30,7 +30,7 @@
          "optimizer": "AdamW",
          "learning_rate": 4e-4,
          "val_ratio": 0.3,
-         "feature_batch_size": 64,
+         "feature_batch_size": 16,
          "batch_size": 64,
          "epochs": 1,
          "weight_decay": 2e-2
