@@ -12,9 +12,8 @@ from script.utils import (
     parse_arguments,
 )
 from data.data_process import prep_dataset, prep_dataloader
-from model.model import LMetalSiteEncoder
-
-LOG_INTERVAL = 50
+from model.model import LMetalSiteEncoder, LMetalSiteTransformerEncoder
+from torch.utils.tensorboard import SummaryWriter
 
 
 def main(conf):
@@ -40,8 +39,10 @@ def main(conf):
     else:
         raise ValueError("No feature available")
 
-    model = LMetalSiteEncoder(conf.model).to(device)
-
+    if conf.model.name == "base":
+        model = LMetalSiteEncoder(conf.model).to(device)
+    elif conf.model.name == "transformer":
+        model = LMetalSiteTransformerEncoder(conf.model).to(device)
     if conf.training.optimizer == "Adam":
         optimizer = torch.optim.Adam(
             model.parameters(),
@@ -57,70 +58,75 @@ def main(conf):
         )
     best_loss = 1000
     model.training = True  # adding Gaussian noise to embedding
-
-    dataset, _ = prep_dataset(conf, device)
-    train_dataloader, val_dataloader = prep_dataloader(
-        dataset, conf, random_seed=RANDOM_SEED
-    )
     loss_func = torch.nn.MSELoss()
-    for epoch in range(conf.training.epochs):
-        train_loss = 0.0
-        for i, batch_data in tqdm(enumerate(train_dataloader)):
-            (
-                feats,
-                _,
-            ) = batch_data
-            optimizer.zero_grad(set_to_none=True)
-            feats = feats.to(device)
-            outputs = model(feats)
-            loss_ = loss_func(outputs, feats)
-            loss_.backward()
-            optimizer.step()
-            running_loss = loss_.detach().cpu().numpy()
-            train_loss += running_loss
-            if i % LOG_INTERVAL == 0 and i > 0:
-                logging.info("Running train loss: {:.4f}".format(running_loss))
-        logging.info(
-            "Epoch {} train loss {:.4f}".format(
-                epoch + 1,
-                train_loss / (i + 1),
-            )
+    for j in range(4):
+        conf.data.fasta_path = (
+            "datasets/uniref_sample_plus_metal/split_{}.fasta".format(j)
         )
-        model.eval()
-        with torch.no_grad():
-            model.training = False
-            val_loss = 0.0
-            for i, batch_data in tqdm(enumerate(val_dataloader)):
+        dataset, _ = prep_dataset(conf, device)
+        train_dataloader, val_dataloader = prep_dataloader(
+            dataset, conf, random_seed=RANDOM_SEED
+        )
+        for epoch in range(1, conf.training.epochs + 1):
+            train_loss = 0.0
+            for i, batch_data in tqdm(enumerate(train_dataloader)):
                 (
                     feats,
                     _,
                 ) = batch_data
+                optimizer.zero_grad(set_to_none=True)
                 feats = feats.to(device)
                 outputs = model(feats)
                 loss_ = loss_func(outputs, feats)
+                loss_.backward()
+                optimizer.step()
                 running_loss = loss_.detach().cpu().numpy()
-                val_loss += running_loss
+                train_loss += running_loss
+            train_loss = train_loss / (i + 1)
+            sub_epoch = j * conf.training.epochs + epoch
+            logging.info(
+                "Epoch {} train loss {:.4f}".format(
+                    sub_epoch,
+                    train_loss,
+                )
+            )
+            writer.add_scalar("train_loss", train_loss, sub_epoch)
+            model.eval()
+            with torch.no_grad():
+                model.training = False
+                val_loss = 0.0
+                for i, batch_data in tqdm(enumerate(val_dataloader)):
+                    (
+                        feats,
+                        _,
+                    ) = batch_data
+                    feats = feats.to(device)
+                    outputs = model(feats)
+                    loss_ = loss_func(outputs, feats)
+                    running_loss = loss_.detach().cpu().numpy()
+                    val_loss += running_loss
 
-        val_loss = val_loss / (i + 1)
-        logging.info(
-            "Epoch {} val loss {:.4f}".format(
-                epoch + 1,
-                val_loss,
+            val_loss = val_loss / (i + 1)
+            logging.info(
+                "Epoch {} val loss {:.4f}".format(
+                    sub_epoch,
+                    val_loss,
+                )
             )
-        )
-        if val_loss < best_loss and val_loss < 0.001 and not conf.general.debug:
-            best_loss = val_loss
-            state = {
-                "encoder_state": model.input_block.state_dict(),
-            }
-            file_name = (
-                conf.output_path
-                + "/"
-                + "autoencoder_{}_epoch_{}".format(conf.data.feature, epoch + 1)
-                + "_loss_{:.3f}".format(val_loss)
-            )
-            torch.save(state, file_name + ".pt")
-            logging.info("\n------------ Save the best model ------------\n")
+            writer.add_scalar("val_loss", val_loss, sub_epoch)
+            if val_loss < best_loss and val_loss < 0.01 and not conf.general.debug:
+                best_loss = val_loss
+                state = {
+                    "encoder_state": model.input_block.state_dict(),
+                }
+                file_name = (
+                    conf.output_path
+                    + "/"
+                    + "autoencoder_{}_epoch_{}".format(conf.data.feature, epoch)
+                    + "_loss_{:.3f}".format(val_loss)
+                )
+                torch.save(state, file_name + ".pt")
+                logging.info("\n------------ Save the best model ------------\n")
 
     logging.info(
         "Training is done at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
@@ -153,7 +159,8 @@ if __name__ == "__main__":
     logging related part
     """
     logging_related(output_path=output_path, debug=conf.general.debug)
+    writer = SummaryWriter(log_dir=output_path)
     main(conf)
-
+    writer.flush()
     end = timer()
     logging.info("Total time used: {:.1f}".format(end - start))

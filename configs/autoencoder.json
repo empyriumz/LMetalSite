@@ -2,22 +2,22 @@
     "general": 
         {
          "seed": 1, 
-         "gpu_id": 0, 
+         "gpu_id": 2, 
          "debug": 0
         },
     "data":
         {
         "data_path": "datasets",
-        "fasta_path": "datasets/uniref_50/short_0.fasta",
-        "feature": "ESM",
+        "fasta_path": "datasets/uniref_sample_plus_metal.fasta",
+        "feature": "ProtTrans",
         "data_type": "uniref",
         "max_seq_len": 5000,
-        "precomputed_feature": 0,
-        "normalize": 1,
-        "save_feature": 1
+        "precomputed_feature": "precomputed_embedding/ProtTrans_uniref_sample_plus_metal",
+        "normalize": 0,
+        "save_feature": 0
         },
     "model": {
-        "name": "base",
+        "name": "transformer",
         "hidden_dim": 128,
         "num_encoder_layers": 2,
         "num_heads": 4,

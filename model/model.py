@@ -222,27 +222,24 @@ class LMetalSiteEncoder(nn.Module):
         # Hyperparameters
         self.augment_eps = conf.augment_eps
         self.training = training
-        hidden_dim = conf.hidden_dim
-        feature_dim = conf.feature_dim
+        self.hidden_dim = conf.hidden_dim
+        self.feature_dim = conf.feature_dim
         modules = [
-            nn.LayerNorm(feature_dim, eps=1e-6),
+            nn.LayerNorm(self.feature_dim, eps=1e-6),
             nn.Dropout(conf.dropout),
-            nn.Linear(feature_dim, hidden_dim),
+            nn.Linear(self.feature_dim, self.hidden_dim),
             nn.LeakyReLU(),
         ]
-        if feature_dim == 384:
+        if self.feature_dim == 384:
             modules.insert(0, nn.Sigmoid())
         self.input_block = nn.Sequential(*modules)
 
         self.decoder = nn.Sequential(
-            nn.LayerNorm(hidden_dim, eps=1e-6),
+            nn.LayerNorm(self.hidden_dim, eps=1e-6),
             nn.Dropout(conf.dropout),
-            nn.Linear(hidden_dim, feature_dim),
+            nn.Linear(self.hidden_dim, self.feature_dim),
             nn.LeakyReLU(),
         )
-        assert conf.ion_type in ["ZN", "CA", "MG", "MN"]
-        self.ion_type = conf.ion_type
-
         # Initialization
         for p in self.parameters():
             if p.dim() > 1:
@@ -259,3 +256,20 @@ class LMetalSiteEncoder(nn.Module):
         h_V = self.decoder(h_V)
 
         return h_V
+
+
+class LMetalSiteTransformerEncoder(LMetalSiteEncoder):
+    def __init__(self, conf, training=True):
+        super(LMetalSiteTransformerEncoder, self).__init__(conf, training=training)
+
+        self.encoder_layer = nn.TransformerEncoderLayer(
+            self.hidden_dim,
+            conf.num_heads,
+            dim_feedforward=4 * self.hidden_dim,
+            dropout=conf.dropout,
+            batch_first=True,
+        )
+        self.transformer_encoder = nn.TransformerEncoder(
+            self.encoder_layer, conf.num_encoder_layers
+        )
+        self.input_block.append(self.transformer_encoder)
