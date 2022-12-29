@@ -11,6 +11,7 @@ from torchmetrics.classification import (
     BinaryAveragePrecision,
 )
 from pathlib import Path
+from torch.utils.tensorboard import SummaryWriter
 from script.utils import (
     logging_related,
     parse_arguments,
@@ -134,6 +135,11 @@ def main(conf):
                     train_auprc,
                 )
             )
+            writer.add_scalars(
+                "train_{}".format(ion),
+                {"loss": train_loss / (i + 1), "auc": train_auc, "auprc": train_auprc},
+                epoch,
+            )
             model.eval()
             with torch.no_grad():
                 model.training = False
@@ -163,6 +169,11 @@ def main(conf):
                     val_auc,
                     val_auprc,
                 )
+            )
+            writer.add_scalars(
+                "val_{}".format(ion),
+                {"loss": val_loss / (i + 1), "auc": val_auc, "auprc": val_auprc},
+                epoch,
             )
 
     logging.info(
@@ -196,7 +207,8 @@ if __name__ == "__main__":
     logging related part
     """
     logging_related(output_path=output_path, debug=conf.general.debug)
+    writer = SummaryWriter(log_dir=output_path)
     main(conf)
-
+    writer.flush()
     end = timer()
     logging.info("Total time used: {:.1f}".format(end - start))
