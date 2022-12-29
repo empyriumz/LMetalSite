@@ -29,13 +29,14 @@ def load_model_and_alphabet(model_name):
 
 
 def load_hub_workaround(url):
+    cache_dir= "/hpcgpfs01/scratch/xdai/esm/checkpoints"
     try:
-        data = torch.hub.load_state_dict_from_url(url, progress=False, map_location="cpu")
+        data = torch.hub.load_state_dict_from_url(url, model_dir=cache_dir, progress=False, map_location="cpu")
     except RuntimeError:
         # Pytorch version issue - see https://github.com/pytorch/pytorch/issues/43106
-        fn = Path(url).name
+        fn = Path(url).name     
         data = torch.load(
-            f"{torch.hub.get_dir()}/checkpoints/{fn}",
+            "{}/{}".format(cache_dir,fn),
             map_location="cpu",
         )
     except urllib.error.HTTPError as e:

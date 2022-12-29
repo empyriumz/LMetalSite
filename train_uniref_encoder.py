@@ -137,14 +137,14 @@ if __name__ == "__main__":
     output_path = None
     if not conf["general"]["debug"]:
         output_path = (
-            Path("./results/")
+            Path("/hpcgpfs01/scratch/xdai/uniref_embedding/results/")
             / Path(args.config).stem
             / Path(
                 str(datetime.datetime.now())[:16].replace(" ", "-").replace(":", "-")
             )
         )
         output_path.mkdir(parents=True, exist_ok=True)
-        conf["output_path"] = "./" + str(output_path)
+        conf["output_path"] = str(output_path)
         with open(str(output_path) + "/config.json", "w") as f:
             json.dump(conf, f, indent=4)
 
