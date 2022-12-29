@@ -21,10 +21,14 @@ def esm_embedding(ID_list, seq_list, conf, device, normalize=True, ion_type="ZN"
     protein_features = {}
     if conf.data.precomputed_feature:
         for id in ID_list:
-            tmp = np.load(
-                conf.data.precomputed_feature + "/{}_esm/{}.npz".format(ion_type, id)
-            )
-            seq_emd = tmp["embedding"]
+            try:
+                seq_emd = np.load(conf.data.precomputed_feature + "/{}.npy".format(id))
+            except:
+                tmp = np.load(
+                    conf.data.precomputed_feature
+                    + "/{}_esm/{}.npz".format(ion_type, id)
+                )
+                seq_emd = tmp["embedding"]
             if normalize:
                 seq_emd = (seq_emd - min_repr_esm) / (max_repr_esm - min_repr_esm)
             protein_features[id] = seq_emd
@@ -102,10 +106,14 @@ def esm_embedding_obsolete(
     protein_features = {}
     if conf.data.precomputed_feature:
         for id in ID_list:
-            tmp = np.load(
-                conf.data.precomputed_feature + "/{}_esm/{}.npz".format(ion_type, id)
-            )
-            seq_emd = tmp["embedding"]
+            try:
+                seq_emd = np.load(conf.data.precomputed_feature + "/{}.npy".format(id))
+            except:
+                tmp = np.load(
+                    conf.data.precomputed_feature
+                    + "/{}_esm/{}.npz".format(ion_type, id)
+                )
+                seq_emd = tmp["embedding"]
             if normalize:
                 seq_emd = (seq_emd - min_repr_esm) / (max_repr_esm - min_repr_esm)
             protein_features[id] = seq_emd
