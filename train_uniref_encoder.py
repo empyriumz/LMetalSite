@@ -43,6 +43,11 @@ def main(conf):
         model = LMetalSiteEncoder(conf.model).to(device)
     elif conf.model.name == "transformer":
         model = LMetalSiteTransformerEncoder(conf.model).to(device)
+    if conf.training.pretrained_encoder:
+        checkpoint = torch.load(conf.training.pretrained_encoder)
+        logging.info("load weights from {}".format(conf.training.pretrained_encoder))
+        model.params.encoder.load_state_dict(checkpoint["encoder_state"])
+        model.params.decoder.load_state_dict(checkpoint["decoder_state"])
     if conf.training.optimizer == "Adam":
         optimizer = torch.optim.Adam(
             model.parameters(),
@@ -121,15 +126,16 @@ def main(conf):
                 )
             )
             writer.add_scalar("val_loss", val_loss, sub_epoch)
-            if val_loss < best_loss and val_loss < 0.02 and not conf.general.debug:
+            if val_loss < best_loss and val_loss < 0.052 and not conf.general.debug:
                 best_loss = val_loss
                 state = {
                     "encoder_state": model.params.encoder.state_dict(),
+                    "decoder_state": model.params.decoder.state_dict(),
                 }
                 file_name = (
                     conf.output_path
                     + "/"
-                    + "autoencoder_{}_epoch_{}".format(conf.data.feature, epoch)
+                    + "autoencoder_{}_epoch_{}".format(conf.data.feature, sub_epoch)
                     + "_loss_{:.3f}".format(val_loss)
                 )
                 torch.save(state, file_name + ".pt")

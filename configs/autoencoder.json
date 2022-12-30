@@ -1,7 +1,7 @@
 {
     "general": {
         "seed": 1,
-        "gpu_id": 0,
+        "gpu_id": 2,
         "debug": 0
     },
     "data": {
@@ -16,7 +16,7 @@
     },
     "model": {
         "name": "base",
-        "hidden_dim": 256,
+        "hidden_dim": 64,
         "hidden_dim_1": 256,
         "hidden_dim_2": 64,
         "num_encoder_layers": 2,

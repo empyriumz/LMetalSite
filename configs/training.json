@@ -8,33 +8,34 @@
     "data":
         {
         "data_path": "datasets",
-        "feature": "ESM",
+        "feature": "ProtTrans",
         "data_type": "original",
         "max_seq_len": 2000,
         "precomputed_feature": "precomputed_embedding",
-        "normalize": 1,
-        "save_feature": 1
-        },
+        "normalize": 0,
+        "save_feature": 0
+    },
     "model": {
         "name": "base",
-        "hidden_dim": 128,
+        "hidden_dim": 64,
+        "hidden_dim_1": 256,
+        "hidden_dim_2": 64,
         "num_encoder_layers": 2,
         "num_heads": 4,
-        "augment_eps": 0.15,
-        "dropout": 0.35,
+        "augment_eps": 0.1,
+        "dropout": 0.3,
         "ion_type": "MN",
         "fix_encoder": 0
     },
-    "training": 
-        {
-         "optimizer": "AdamW",
-         "pretrained_encoder": 0,
-         "encoder_learning_rate": 2e-4,
-         "learning_rate": 4e-4,
-         "val_ratio": 0.25,
-         "feature_batch_size": 1,
-         "batch_size": 64,
-         "epochs": 15,
-         "weight_decay": 3e-2
-        }
+    "training": {
+        "optimizer": "AdamW",
+        "pretrained_encoder": "results/autoencoder/2022-12-30-19-57/autoencoder_ProtTrans_epoch_120_loss_0.052.pt",
+        "encoder_learning_rate": 0.0002,
+        "learning_rate": 0.0004,
+        "val_ratio": 0.25,
+        "feature_batch_size": 1,
+        "batch_size": 64,
+        "epochs": 12,
+        "weight_decay": 0.03
+    }
 }

@@ -132,7 +132,7 @@ class LMetalSiteBase(nn.Module):
         )
         self.params = nn.ModuleDict(
             {
-                "encoder": nn.ModuleList([self.input_block]),
+                "encoder": self.input_block,
                 "classifier": nn.ModuleList(
                     [self.MN_head, self.MG_head, self.CA_head, self.ZN_head]
                 ),
@@ -166,6 +166,34 @@ class LMetalSiteBase(nn.Module):
         logits = self.get_logits(h_V)
 
         return logits
+
+
+class LMetalSiteTwoLayer(LMetalSiteBase):
+    def __init__(self, conf, training=True):
+        super(LMetalSiteTwoLayer, self).__init__(conf, training=training)
+        self.hidden_dim_1 = conf.hidden_dim_1
+        self.hidden_dim_2 = conf.hidden_dim_2
+        self.feature_dim = conf.feature_dim
+        modules = [
+            nn.LayerNorm(self.feature_dim, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(self.feature_dim, self.hidden_dim_1),
+            nn.LeakyReLU(),
+            nn.LayerNorm(self.hidden_dim_1, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(self.hidden_dim_1, self.hidden_dim_2),
+            nn.LeakyReLU(),
+        ]
+        self.input_block = nn.Sequential(*modules)
+        self.params.update({"encoder": self.input_block})
+        # self.params = nn.ModuleDict(
+        #     {
+        #         "encoder": nn.ModuleList([self.input_block]),
+        #         "classifier": nn.ModuleList(
+        #             [self.MN_head, self.MG_head, self.CA_head, self.ZN_head]
+        #         ),
+        #     }
+        # )
 
 
 class LMetalSite(LMetalSiteBase):
@@ -247,11 +275,12 @@ class LMetalSiteEncoder(nn.Module):
             nn.LayerNorm(self.hidden_dim_1, eps=1e-6),
             nn.Dropout(conf.dropout),
             nn.Linear(self.hidden_dim_1, self.feature_dim),
-            nn.LeakyReLU(),
+            # nn.LeakyReLU(),
         )
         self.params = nn.ModuleDict(
             {
-                "encoder": nn.ModuleList([self.input_block]),
+                "encoder": self.input_block,
+                "decoder": self.decoder,
             }
         )
         # Initialization
@@ -288,14 +317,12 @@ class LMetalSiteTransformerEncoder(LMetalSiteEncoder):
         # )
         self.encoder_layers = nn.ModuleList(
             [
-                TransformerLayer(self.hidden_dim, conf.num_heads, conf.dropout)
+                TransformerLayer(conf.hidden_dim, conf.num_heads, conf.dropout)
                 for _ in range(conf.num_encoder_layers)
             ]
         )
-        self.params = nn.ModuleDict(
-            {
-                "encoder": nn.ModuleList([self.input_block, self.encoder_layers]),
-            }
+        self.params.update(
+            {"encoder": nn.ModuleList([self.input_block, self.encoder_layers])}
         )
 
     def forward(self, protein_feat, mask=None):

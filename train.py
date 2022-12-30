@@ -17,7 +17,7 @@ from script.utils import (
     parse_arguments,
 )
 from data.data_process import prep_dataset, prep_dataloader
-from model.model import LMetalSite, LMetalSiteBase
+from model.model import LMetalSite, LMetalSiteBase, LMetalSiteTwoLayer
 
 LOG_INTERVAL = 50
 
@@ -47,7 +47,7 @@ def main(conf):
 
     # Load LMetalSite model
     if conf.model.name == "base":
-        model = LMetalSiteBase(conf.model).to(device)
+        model = LMetalSiteTwoLayer(conf.model).to(device)
     elif conf.model.name == "transformer":
         model = LMetalSite(conf.model).to(device)
     else:
@@ -56,8 +56,9 @@ def main(conf):
     if conf.training.pretrained_encoder:
         checkpoint = torch.load(conf.training.pretrained_encoder)
         logging.info("load encoder from {}".format(conf.training.pretrained_encoder))
-        model.input_block.load_state_dict(checkpoint["encoder_state"])
-
+        model.params.encoder.load_state_dict(checkpoint["encoder_state"])
+    else:
+        conf.training.encoder_learning_rate = conf.training.learning_rate
     if conf.training.optimizer == "Adam":
         optimizer = torch.optim.Adam(
             [
