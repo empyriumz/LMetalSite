@@ -222,27 +222,38 @@ class LMetalSiteEncoder(nn.Module):
         # Hyperparameters
         self.augment_eps = conf.augment_eps
         self.training = training
-        hidden_dim = conf.hidden_dim
-        feature_dim = conf.feature_dim
+        self.hidden_dim_1 = conf.hidden_dim_1
+        self.hidden_dim_2 = conf.hidden_dim_2
+        self.feature_dim = conf.feature_dim
         modules = [
-            nn.LayerNorm(feature_dim, eps=1e-6),
+            nn.LayerNorm(self.feature_dim, eps=1e-6),
             nn.Dropout(conf.dropout),
-            nn.Linear(feature_dim, hidden_dim),
+            nn.Linear(self.feature_dim, self.hidden_dim_1),
+            nn.LeakyReLU(),
+            nn.LayerNorm(self.hidden_dim_1, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(self.hidden_dim_1, self.hidden_dim_2),
             nn.LeakyReLU(),
         ]
-        if feature_dim == 384:
+        if self.feature_dim == 384:
             modules.insert(0, nn.Sigmoid())
         self.input_block = nn.Sequential(*modules)
 
         self.decoder = nn.Sequential(
-            nn.LayerNorm(hidden_dim, eps=1e-6),
+            nn.LayerNorm(self.hidden_dim_2, eps=1e-6),
             nn.Dropout(conf.dropout),
-            nn.Linear(hidden_dim, feature_dim),
+            nn.Linear(self.hidden_dim_2, self.hidden_dim_1),
+            nn.LeakyReLU(),
+            nn.LayerNorm(self.hidden_dim_1, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(self.hidden_dim_1, self.feature_dim),
             nn.LeakyReLU(),
         )
-        assert conf.ion_type in ["ZN", "CA", "MG", "MN"]
-        self.ion_type = conf.ion_type
-
+        self.params = nn.ModuleDict(
+            {
+                "encoder": nn.ModuleList([self.input_block]),
+            }
+        )
         # Initialization
         for p in self.parameters():
             if p.dim() > 1:
@@ -253,9 +264,46 @@ class LMetalSiteEncoder(nn.Module):
             input = input + self.augment_eps * torch.randn_like(input)
         return input
 
-    def forward(self, protein_feat):
+    def forward(self, protein_feat, mask=None):
         protein_feat = self.add_noise(protein_feat)
         h_V = self.input_block(protein_feat)
+        h_V = self.decoder(h_V)
+
+        return h_V
+
+
+class LMetalSiteTransformerEncoder(LMetalSiteEncoder):
+    def __init__(self, conf, training=True):
+        super(LMetalSiteTransformerEncoder, self).__init__(conf, training=training)
+
+        # self.encoder_layer = nn.TransformerEncoderLayer(
+        #     self.hidden_dim,
+        #     conf.num_heads,
+        #     dim_feedforward=4 * self.hidden_dim,
+        #     dropout=conf.dropout,
+        #     batch_first=True,
+        # )
+        # self.transformer_encoder = nn.TransformerEncoder(
+        #     self.encoder_layer, conf.num_encoder_layers
+        # )
+        self.encoder_layers = nn.ModuleList(
+            [
+                TransformerLayer(self.hidden_dim, conf.num_heads, conf.dropout)
+                for _ in range(conf.num_encoder_layers)
+            ]
+        )
+        self.params = nn.ModuleDict(
+            {
+                "encoder": nn.ModuleList([self.input_block, self.encoder_layers]),
+            }
+        )
+
+    def forward(self, protein_feat, mask=None):
+        protein_feat = self.add_noise(protein_feat)
+        h_V = self.input_block(protein_feat)
+        for layer in self.encoder_layers:
+            h_V = layer(h_V, mask)
+        # h_V = self.transformer_encoder(h_V, mask=mask)
         h_V = self.decoder(h_V)
 
         return h_V
