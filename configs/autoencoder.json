@@ -1,7 +1,7 @@
 {
     "general": {
         "seed": 1,
-        "gpu_id": 0,
+        "gpu_id": 2,
         "debug": 0
     },
     "data": {
@@ -16,7 +16,7 @@
     },
     "model": {
         "name": "base",
-        "hidden_dim": 256,
+        "hidden_dim": 64,
         "hidden_dim_1": 256,
         "hidden_dim_2": 64,
         "num_encoder_layers": 2,
@@ -27,11 +27,12 @@
     },
     "training": {
         "optimizer": "AdamW",
+        "pretrained_encoder": 0,
         "learning_rate": 0.0004,
-        "val_ratio": 0.3,
+        "val_ratio": 0.25,
         "feature_batch_size": 8,
         "batch_size": 64,
-        "epochs": 10,
+        "epochs": 60,
         "weight_decay": 0.02
     }
 }
