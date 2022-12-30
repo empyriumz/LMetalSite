@@ -58,7 +58,8 @@ def main(conf):
         )
     best_loss = 1000
     model.training = True  # adding Gaussian noise to embedding
-    loss_func = torch.nn.MSELoss()
+    # loss_func = torch.nn.MSELoss()
+    loss_func = torch.nn.SmoothL1Loss(beta=0.2)
     for j in range(4):
         conf.data.fasta_path = (
             "datasets/uniref_sample_plus_metal/split_{}.fasta".format(j)
@@ -72,11 +73,14 @@ def main(conf):
             for i, batch_data in tqdm(enumerate(train_dataloader)):
                 (
                     feats,
-                    _,
+                    mask,
                 ) = batch_data
                 optimizer.zero_grad(set_to_none=True)
                 feats = feats.to(device)
-                outputs = model(feats)
+                mask = mask.to(device)
+                outputs = model(feats, mask)
+                outputs = torch.masked_select(outputs, mask.unsqueeze(-1).bool())
+                feats = torch.masked_select(feats, mask.unsqueeze(-1).bool())
                 loss_ = loss_func(outputs, feats)
                 loss_.backward()
                 optimizer.step()
@@ -98,10 +102,13 @@ def main(conf):
                 for i, batch_data in tqdm(enumerate(val_dataloader)):
                     (
                         feats,
-                        _,
+                        mask,
                     ) = batch_data
                     feats = feats.to(device)
-                    outputs = model(feats)
+                    mask = mask.to(device)
+                    outputs = model(feats, mask)
+                    outputs = torch.masked_select(outputs, mask.unsqueeze(-1).bool())
+                    feats = torch.masked_select(feats, mask.unsqueeze(-1).bool())
                     loss_ = loss_func(outputs, feats)
                     running_loss = loss_.detach().cpu().numpy()
                     val_loss += running_loss
@@ -114,10 +121,10 @@ def main(conf):
                 )
             )
             writer.add_scalar("val_loss", val_loss, sub_epoch)
-            if val_loss < best_loss and val_loss < 0.01 and not conf.general.debug:
+            if val_loss < best_loss and val_loss < 0.02 and not conf.general.debug:
                 best_loss = val_loss
                 state = {
-                    "encoder_state": model.input_block.state_dict(),
+                    "encoder_state": model.params.encoder.state_dict(),
                 }
                 file_name = (
                     conf.output_path
