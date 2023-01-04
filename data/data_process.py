@@ -122,7 +122,7 @@ def prep_dataset(conf, device, ion_type=None, tokenizer=None):
     pos_weight = None
     if conf.data.data_type != "uniref":
         fasta_path = conf.data.data_path + "/{}_train.fa".format(ion_type)
-        
+
     if conf.data.data_type == "uniref":
         ID_list, seq_list = process_fasta_biopython(conf.data.fasta_path)
     else:

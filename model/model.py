@@ -173,6 +173,7 @@ class LMetalSiteTwoLayer(LMetalSiteBase):
         super(LMetalSiteTwoLayer, self).__init__(conf, training=training)
         self.hidden_dim_1 = conf.hidden_dim_1
         self.hidden_dim_2 = conf.hidden_dim_2
+        assert self.hidden_dim == self.hidden_dim_2
         self.feature_dim = conf.feature_dim
         modules = [
             nn.LayerNorm(self.feature_dim, eps=1e-6),

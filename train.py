@@ -47,6 +47,8 @@ def main(conf):
 
     # Load LMetalSite model
     if conf.model.name == "base":
+        model = LMetalSiteBase(conf.model).to(device)
+    elif conf.model.name == "twolayer":
         model = LMetalSiteTwoLayer(conf.model).to(device)
     elif conf.model.name == "transformer":
         model = LMetalSite(conf.model).to(device)
