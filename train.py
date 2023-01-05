@@ -40,6 +40,8 @@ def main(conf):
         conf.model.feature_dim = 1024
     elif conf.data.feature == "Composite":
         conf.model.feature_dim = 1408
+    elif conf.data.feature == "Composite_ESM":
+        conf.model.feature_dim = 2944
     elif conf.data.feature == "ESM":
         conf.model.feature_dim = 2560
     else:
@@ -59,8 +61,8 @@ def main(conf):
         checkpoint = torch.load(conf.training.pretrained_encoder)
         logging.info("load encoder from {}".format(conf.training.pretrained_encoder))
         model.params.encoder.load_state_dict(checkpoint["encoder_state"])
-    else:
-        conf.training.encoder_learning_rate = conf.training.learning_rate
+    # else:
+    #     conf.training.encoder_learning_rate = conf.training.learning_rate
     if conf.training.optimizer == "Adam":
         optimizer = torch.optim.Adam(
             [
@@ -101,107 +103,98 @@ def main(conf):
         dataloader_val.append(val_dataloader)
         pos_weights.append(pos_weight)
 
-    for j in range(5):
+    for epoch in range(conf.training.epochs):
         for k, ion in enumerate(["ZN", "MN", "MG", "CA"]):
             loss_func = torch.nn.BCEWithLogitsLoss(
                 pos_weight=torch.sqrt(torch.tensor(pos_weights[k]))
             )
-            logging.info("Trainig for {}".format(ion))
+            logging.info("Training for {}".format(ion))
             model.ion_type = ion
-            for epoch in range(conf.training.epochs):
-                train_loss = 0.0
+
+            train_loss = 0.0
+            all_outputs, all_labels = [], []
+            for i, batch_data in tqdm(enumerate(dataloader_train[k])):
+                feats, labels, masks = batch_data
+                optimizer.zero_grad(set_to_none=True)
+                feats = feats.to(device)
+                masks = masks.to(device)
+                labels = labels.to(device)
+                outputs = model(feats, masks)
+                loss_ = loss_func(outputs * masks, labels)
+                loss_.backward()
+                optimizer.step()
+                labels = torch.masked_select(labels, masks.bool())
+                outputs = torch.sigmoid(torch.masked_select(outputs, masks.bool()))
+                all_outputs.append(outputs)
+                all_labels.append(labels)
+                train_loss += loss_.detach().cpu().numpy()
+                # running_auc = metric_auc(outputs, labels)
+                # running_auprc = metric_auprc(outputs, labels)
+                # if i % LOG_INTERVAL == 0 and i > 0:
+                #     logging.info(
+                #         "Running train loss: {:.4f}, auc: {:.3f}, auprc: {:.3f}".format(
+                #             running_loss, running_auc, running_auprc
+                #         )
+                #     )
+            all_outputs = torch.cat(all_outputs)
+            all_labels = torch.cat(all_labels)
+            train_auc = metric_auc(all_outputs, all_labels).detach().cpu().numpy()
+            train_auprc = metric_auprc(all_outputs, all_labels).detach().cpu().numpy()
+            logging.info(
+                "Epoch {} train loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
+                    epoch,
+                    train_loss / (i + 1),
+                    train_auc,
+                    train_auprc,
+                )
+            )
+            writer.add_scalars(
+                "train_{}".format(ion),
+                {
+                    "loss": train_loss / (i + 1),
+                    "auc": train_auc,
+                    "auprc": train_auprc,
+                },
+                epoch,
+            )
+            model.eval()
+            with torch.no_grad():
+                model.training = False
+                val_loss = 0.0
                 all_outputs, all_labels = [], []
-                for i, batch_data in tqdm(enumerate(dataloader_train[k])):
+                for i, batch_data in tqdm(enumerate(dataloader_val[k])):
                     feats, labels, masks = batch_data
-                    optimizer.zero_grad(set_to_none=True)
                     feats = feats.to(device)
                     masks = masks.to(device)
                     labels = labels.to(device)
                     outputs = model(feats, masks)
-                    loss_ = loss_func(outputs * masks, labels)
-                    loss_.backward()
-                    optimizer.step()
                     labels = torch.masked_select(labels, masks.bool())
                     outputs = torch.sigmoid(torch.masked_select(outputs, masks.bool()))
                     all_outputs.append(outputs)
                     all_labels.append(labels)
-                    running_auc = metric_auc(outputs, labels)
-                    running_auprc = metric_auprc(outputs, labels)
-                    running_loss = loss_.detach().cpu().numpy()
-                    train_loss += running_loss
-                    if i % LOG_INTERVAL == 0 and i > 0:
-                        logging.info(
-                            "Running train loss: {:.4f}, auc: {:.3f}, auprc: {:.3f}".format(
-                                running_loss, running_auc, running_auprc
-                            )
-                        )
+                    val_loss += loss_.detach().cpu().numpy()
+
                 all_outputs = torch.cat(all_outputs)
                 all_labels = torch.cat(all_labels)
-                train_auc = metric_auc(all_outputs, all_labels).detach().cpu().numpy()
-                train_auprc = (
-                    metric_auprc(all_outputs, all_labels).detach().cpu().numpy()
-                )
-                sub_epoch = j * conf.training.epochs + epoch
+                val_auc = metric_auc(all_outputs, all_labels).detach().cpu().numpy()
+                val_auprc = metric_auprc(all_outputs, all_labels).detach().cpu().numpy()
                 logging.info(
-                    "Epoch {} train loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
-                        sub_epoch,
-                        train_loss / (i + 1),
-                        train_auc,
-                        train_auprc,
+                    "Epoch {} val loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
+                        epoch,
+                        val_loss / (i + 1),
+                        val_auc,
+                        val_auprc,
                     )
                 )
                 writer.add_scalars(
-                    "train_{}".format(ion),
+                    "val_{}".format(ion),
                     {
-                        "loss": train_loss / (i + 1),
-                        "auc": train_auc,
-                        "auprc": train_auprc,
+                        "loss": val_loss / (i + 1),
+                        "auc": val_auc,
+                        "auprc": val_auprc,
                     },
-                    sub_epoch,
+                    epoch,
                 )
-                model.eval()
-                with torch.no_grad():
-                    model.training = False
-                    val_loss = 0.0
-                    all_outputs, all_labels = [], []
-                    for i, batch_data in tqdm(enumerate(dataloader_val[k])):
-                        feats, labels, masks = batch_data
-                        feats = feats.to(device)
-                        masks = masks.to(device)
-                        labels = labels.to(device)
-                        outputs = model(feats, masks)
-                        labels = torch.masked_select(labels, masks.bool())
-                        outputs = torch.sigmoid(
-                            torch.masked_select(outputs, masks.bool())
-                        )
-                        all_outputs.append(outputs)
-                        all_labels.append(labels)
-                        running_loss = loss_.detach().cpu().numpy()
-                        val_loss += running_loss
-
-                    all_outputs = torch.cat(all_outputs)
-                    all_labels = torch.cat(all_labels)
-                    val_auc = metric_auc(all_outputs, all_labels).detach().cpu().numpy()
-                    val_auprc = (
-                        metric_auprc(all_outputs, all_labels).detach().cpu().numpy()
-                    )
-                    logging.info(
-                        "Epoch {} val loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
-                            sub_epoch,
-                            val_loss / (i + 1),
-                            val_auc,
-                            val_auprc,
-                        )
-                    )
-                    writer.add_scalars(
-                        "val_{}".format(ion),
-                        {
-                            "loss": val_loss / (i + 1),
-                            "auc": val_auc,
-                            "auprc": val_auprc,
-                        },
-                        sub_epoch,
-                    )
 
     logging.info(
         "Training is done at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))

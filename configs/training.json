@@ -1,12 +1,12 @@
 {
     "general": {
         "seed": 1,
-        "gpu_id": 1,
+        "gpu_id": 2,
         "debug": 0
     },
     "data": {
         "data_path": "datasets",
-        "feature": "Composite",
+        "feature": "ESM",
         "data_type": "original",
         "max_seq_len": 2000,
         "precomputed_feature": "precomputed_embedding",
@@ -15,9 +15,9 @@
     },
     "model": {
         "name": "twolayer",
-        "hidden_dim": 128,
+        "hidden_dim": 64,
         "hidden_dim_1": 256,
-        "hidden_dim_2": 128,
+        "hidden_dim_2": 64,
         "num_encoder_layers": 2,
         "num_heads": 4,
         "augment_eps": 0.1,
@@ -33,7 +33,7 @@
         "val_ratio": 0.25,
         "feature_batch_size": 4,
         "batch_size": 64,
-        "epochs": 3,
-        "weight_decay": 0.025
+        "epochs": 15,
+        "weight_decay": 0.03
     }
 }

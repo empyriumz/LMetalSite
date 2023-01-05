@@ -94,7 +94,7 @@ class LMetalSiteBase(nn.Module):
         self.hidden_dim = conf.hidden_dim
         feature_dim = conf.feature_dim
         modules = [
-            nn.Tanh(), # add tanh to replace normalization
+            # nn.Tanh(),  # add tanh to replace normalization
             nn.LayerNorm(feature_dim, eps=1e-6),
             nn.Dropout(conf.dropout),
             nn.Linear(feature_dim, self.hidden_dim),

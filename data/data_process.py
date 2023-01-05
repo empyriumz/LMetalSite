@@ -10,6 +10,7 @@ from .embeddings import (
     load_evoformer_embedding,
     prottrans_embedding,
     composite_embedding,
+    composite_embedding_esm,
     esm_embedding,
     multimodal_embedding,
 )
@@ -67,6 +68,7 @@ def feature_extraction(
     assert feature_name in [
         "Evoformer",
         "Composite",
+        "Composite_ESM",
         "MultiModal",
         "ProtTrans",
         "ESM",
@@ -92,6 +94,13 @@ def feature_extraction(
         )
     elif feature_name == "Composite":
         protein_features = composite_embedding(
+            ID_list,
+            conf.data.precomputed_feature,
+            normalize=conf.data.normalize,
+            ion_type=ion_type,
+        )
+    elif feature_name == "Composite_ESM":
+        protein_features = composite_embedding_esm(
             ID_list,
             conf.data.precomputed_feature,
             normalize=conf.data.normalize,

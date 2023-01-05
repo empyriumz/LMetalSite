@@ -174,6 +174,30 @@ def composite_embedding(
     return protein_features
 
 
+def composite_embedding_esm(
+    ID_list, precomputed_feature_path, normalize=True, ion_type="ZN"
+):
+    min_repr = np.concatenate((min_repr_esm, min_repr_evo))
+    max_repr = np.concatenate((max_repr_esm, max_repr_evo))
+    protein_features = {}
+    for id in ID_list:
+        feature_evo = np.load(
+            precomputed_feature_path + "/{}_Evoformer/{}.npz".format(ion_type, id)
+        )
+        feature_prot = np.load(
+            precomputed_feature_path + "/{}_esm/{}.npz".format(ion_type, id)
+        )
+
+        seq_emd = np.concatenate(
+            (feature_prot["embedding"], feature_evo["single"]), axis=1
+        )
+        if normalize:
+            seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
+        protein_features[id] = seq_emd
+
+    return protein_features
+
+
 def load_evoformer_embedding(
     ID_list, precomputed_feature_path, normalize=True, ion_type="ZN"
 ):
