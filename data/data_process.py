@@ -165,10 +165,10 @@ def prep_dataloader(dataset, conf, random_seed=0, ion_type="ZN"):
         train_dataset,
         batch_size=conf.training.batch_size,
         collate_fn=dataset.collate_fn,
-        shuffle=True,
+        shuffle=False,
         drop_last=False,
         pin_memory=True,
-        num_workers=8,
+        num_workers=0,
     )
     val_dataloader = DataLoader(
         val_dataset,
@@ -177,7 +177,7 @@ def prep_dataloader(dataset, conf, random_seed=0, ion_type="ZN"):
         shuffle=False,
         drop_last=True,
         pin_memory=True,
-        num_workers=8,
+        num_workers=0,
     )
 
     return train_dataloader, val_dataloader

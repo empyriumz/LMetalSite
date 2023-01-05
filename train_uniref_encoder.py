@@ -65,81 +65,80 @@ def main(conf):
     model.training = True  # adding Gaussian noise to embedding
     # loss_func = torch.nn.MSELoss()
     loss_func = torch.nn.SmoothL1Loss(beta=0.2)
-    for j in range(4):
-        conf.data.fasta_path = (
-            "datasets/uniref_sample_plus_metal/split_{}.fasta".format(j)
+    # for j in range(3):
+    #     conf.data.fasta_path = (
+    #         "datasets/sample_plus_metal/sample_plus_metal.part_00{}.fasta".format(j+1)
+    #     )
+    dataset, _ = prep_dataset(conf, device)
+    train_dataloader, val_dataloader = prep_dataloader(
+        dataset, conf, random_seed=RANDOM_SEED
+    )
+    for epoch in range(1, conf.training.epochs + 1):
+        train_loss = 0.0
+        for i, batch_data in enumerate(train_dataloader):
+            (
+                feats,
+                mask,
+            ) = batch_data
+            optimizer.zero_grad(set_to_none=True)
+            feats = feats.to(device)
+            mask = mask.to(device)
+            outputs = model(feats, mask)
+            outputs = torch.masked_select(outputs, mask.unsqueeze(-1).bool())
+            feats = torch.masked_select(feats, mask.unsqueeze(-1).bool())
+            loss_ = loss_func(outputs, feats)
+            loss_.backward()
+            optimizer.step()
+            running_loss = loss_.detach().cpu().numpy()
+            train_loss += running_loss
+        train_loss = train_loss / (i + 1)
+        logging.info(
+            "Epoch {} train loss {:.4f}".format(
+                epoch,
+                train_loss,
+            )
         )
-        dataset, _ = prep_dataset(conf, device)
-        train_dataloader, val_dataloader = prep_dataloader(
-            dataset, conf, random_seed=RANDOM_SEED
-        )
-        for epoch in range(1, conf.training.epochs + 1):
-            train_loss = 0.0
-            for i, batch_data in tqdm(enumerate(train_dataloader)):
+        writer.add_scalar("train_loss", train_loss, epoch)
+        model.eval()
+        with torch.no_grad():
+            model.training = False
+            val_loss = 0.0
+            for i, batch_data in enumerate(val_dataloader):
                 (
                     feats,
                     mask,
                 ) = batch_data
-                optimizer.zero_grad(set_to_none=True)
                 feats = feats.to(device)
                 mask = mask.to(device)
                 outputs = model(feats, mask)
                 outputs = torch.masked_select(outputs, mask.unsqueeze(-1).bool())
                 feats = torch.masked_select(feats, mask.unsqueeze(-1).bool())
                 loss_ = loss_func(outputs, feats)
-                loss_.backward()
-                optimizer.step()
                 running_loss = loss_.detach().cpu().numpy()
-                train_loss += running_loss
-            train_loss = train_loss / (i + 1)
-            sub_epoch = j * conf.training.epochs + epoch
-            logging.info(
-                "Epoch {} train loss {:.4f}".format(
-                    sub_epoch,
-                    train_loss,
-                )
-            )
-            writer.add_scalar("train_loss", train_loss, sub_epoch)
-            model.eval()
-            with torch.no_grad():
-                model.training = False
-                val_loss = 0.0
-                for i, batch_data in tqdm(enumerate(val_dataloader)):
-                    (
-                        feats,
-                        mask,
-                    ) = batch_data
-                    feats = feats.to(device)
-                    mask = mask.to(device)
-                    outputs = model(feats, mask)
-                    outputs = torch.masked_select(outputs, mask.unsqueeze(-1).bool())
-                    feats = torch.masked_select(feats, mask.unsqueeze(-1).bool())
-                    loss_ = loss_func(outputs, feats)
-                    running_loss = loss_.detach().cpu().numpy()
-                    val_loss += running_loss
+                val_loss += running_loss
 
-            val_loss = val_loss / (i + 1)
-            logging.info(
-                "Epoch {} val loss {:.4f}".format(
-                    sub_epoch,
-                    val_loss,
-                )
+        val_loss = val_loss / (i + 1)
+        logging.info(
+            "Epoch {} val loss {:.4f}".format(
+                epoch,
+                val_loss,
             )
-            writer.add_scalar("val_loss", val_loss, sub_epoch)
-            if val_loss < best_loss and val_loss < 0.052 and not conf.general.debug:
-                best_loss = val_loss
-                state = {
-                    "encoder_state": model.params.encoder.state_dict(),
-                    "decoder_state": model.params.decoder.state_dict(),
-                }
-                file_name = (
-                    conf.output_path
-                    + "/"
-                    + "autoencoder_{}_epoch_{}".format(conf.data.feature, sub_epoch)
-                    + "_loss_{:.3f}".format(val_loss)
-                )
-                torch.save(state, file_name + ".pt")
-                logging.info("\n------------ Save the best model ------------\n")
+        )
+        writer.add_scalar("val_loss", val_loss, epoch)
+        if val_loss < best_loss and val_loss < 0.045 and not conf.general.debug:
+            best_loss = val_loss
+            state = {
+                "encoder_state": model.params.encoder.state_dict(),
+                "decoder_state": model.params.decoder.state_dict(),
+            }
+            file_name = (
+                conf.output_path
+                + "/"
+                + "autoencoder_{}_epoch_{}".format(conf.data.feature, epoch)
+                + "_loss_{:.3f}".format(val_loss)
+            )
+            torch.save(state, file_name + ".pt")
+            logging.info("\n------------ Save the best model ------------\n")
 
     logging.info(
         "Training is done at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
