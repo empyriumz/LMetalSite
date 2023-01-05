@@ -91,18 +91,19 @@ class LMetalSiteBase(nn.Module):
         # Hyperparameters
         self.augment_eps = conf.augment_eps
         self.training = training
-        hidden_dim = conf.hidden_dim
+        self.hidden_dim = conf.hidden_dim
         feature_dim = conf.feature_dim
         modules = [
+            nn.Tanh(), # add tanh to replace normalization
             nn.LayerNorm(feature_dim, eps=1e-6),
             nn.Dropout(conf.dropout),
-            nn.Linear(feature_dim, hidden_dim),
+            nn.Linear(feature_dim, self.hidden_dim),
             nn.LeakyReLU(),
         ]
-        if feature_dim == 384:
-            modules.insert(
-                0, nn.Sigmoid()
-            )  # add a sigmoid for normalization Evoformer only
+        # if feature_dim == 384:
+        #     modules.insert(
+        #         0, nn.Sigmoid()
+        #     )  # add a sigmoid for normalization Evoformer only
         self.input_block = nn.Sequential(*modules)
         if conf.fix_encoder:
             self.input_block.requires_grad_(False)
@@ -111,24 +112,24 @@ class LMetalSiteBase(nn.Module):
 
         # ion-specific layers
         self.ZN_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim, bias=True),
+            nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
             nn.LeakyReLU(),
-            nn.Linear(hidden_dim, 1, bias=True),
+            nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.CA_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim, bias=True),
+            nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
             nn.LeakyReLU(),
-            nn.Linear(hidden_dim, 1, bias=True),
+            nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.MG_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim, bias=True),
+            nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
             nn.LeakyReLU(),
-            nn.Linear(hidden_dim, 1, bias=True),
+            nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.MN_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim, bias=True),
+            nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
             nn.LeakyReLU(),
-            nn.Linear(hidden_dim, 1, bias=True),
+            nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.params = nn.ModuleDict(
             {
@@ -173,6 +174,7 @@ class LMetalSiteTwoLayer(LMetalSiteBase):
         super(LMetalSiteTwoLayer, self).__init__(conf, training=training)
         self.hidden_dim_1 = conf.hidden_dim_1
         self.hidden_dim_2 = conf.hidden_dim_2
+        assert self.hidden_dim == self.hidden_dim_2
         self.feature_dim = conf.feature_dim
         modules = [
             nn.LayerNorm(self.feature_dim, eps=1e-6),
@@ -254,6 +256,7 @@ class LMetalSiteEncoder(nn.Module):
         self.hidden_dim_2 = conf.hidden_dim_2
         self.feature_dim = conf.feature_dim
         modules = [
+            # nn.Tanh(),
             nn.LayerNorm(self.feature_dim, eps=1e-6),
             nn.Dropout(conf.dropout),
             nn.Linear(self.feature_dim, self.hidden_dim_1),
@@ -275,7 +278,7 @@ class LMetalSiteEncoder(nn.Module):
             nn.LayerNorm(self.hidden_dim_1, eps=1e-6),
             nn.Dropout(conf.dropout),
             nn.Linear(self.hidden_dim_1, self.feature_dim),
-            # nn.LeakyReLU(),
+            # nn.Tanh(),
         )
         self.params = nn.ModuleDict(
             {
