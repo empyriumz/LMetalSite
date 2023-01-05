@@ -196,6 +196,7 @@ if __name__ == "__main__":
         output_path = (
             Path("./results/")
             / Path(args.config).stem
+            / Path(conf["data"]["feature"]+"_"+conf["model"]["name"])
             / Path(
                 str(datetime.datetime.now())[:16].replace(" ", "-").replace(":", "-")
             )

@@ -1,24 +1,24 @@
 {
     "general": {
         "seed": 1,
-        "gpu_id": 2,
+        "gpu_id": 1,
         "debug": 0
     },
     "data": {
         "data_path": "datasets",
-        "fasta_path": "datasets/uniref_sample_plus_metal.fasta",
+        "fasta_path": "datasets/uniref_sample_plus_metal/sample_plus_metal.fasta.split/sample_plus_metal.fasta",
         "feature": "ProtTrans",
         "data_type": "uniref",
         "max_seq_len": 5000,
-        "precomputed_feature": "precomputed_embedding/ProtTrans_uniref_sample_plus_metal",
-        "normalize": 0,
+        "precomputed_feature": "precomputed_embedding/ProtTrans",
+        "normalize": 1,
         "save_feature": 0
     },
     "model": {
         "name": "base",
-        "hidden_dim": 64,
+        "hidden_dim": 128,
         "hidden_dim_1": 256,
-        "hidden_dim_2": 64,
+        "hidden_dim_2": 128,
         "num_encoder_layers": 2,
         "num_heads": 4,
         "augment_eps": 0.1,
@@ -32,7 +32,7 @@
         "val_ratio": 0.25,
         "feature_batch_size": 8,
         "batch_size": 64,
-        "epochs": 30,
-        "weight_decay": 0.02
+        "epochs": 40,
+        "weight_decay": 0.025
     }
 }
