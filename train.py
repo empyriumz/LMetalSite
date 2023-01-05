@@ -92,9 +92,10 @@ def main(conf):
     metric_auc = BinaryAUROC(thresholds=None)
     metric_auprc = BinaryAveragePrecision(thresholds=None)
     model.training = True  # adding Gaussian noise to embedding
+    ion_list = ["MG", "CA", "MN", "ZN"]
     pos_weights = []
     dataloader_train, dataloader_val = [], []
-    for ion in ["ZN", "MN", "MG", "CA"]:
+    for ion in ion_list:
         dataset, pos_weight = prep_dataset(conf, device, ion_type=ion)
         train_dataloader, val_dataloader = prep_dataloader(
             dataset, conf, random_seed=RANDOM_SEED, ion_type=ion
@@ -104,7 +105,7 @@ def main(conf):
         pos_weights.append(pos_weight)
 
     for epoch in range(conf.training.epochs):
-        for k, ion in enumerate(["ZN", "MN", "MG", "CA"]):
+        for k, ion in enumerate(ion_list):
             loss_func = torch.nn.BCEWithLogitsLoss(
                 pos_weight=torch.sqrt(torch.tensor(pos_weights[k]))
             )
@@ -142,7 +143,7 @@ def main(conf):
             train_auprc = metric_auprc(all_outputs, all_labels).detach().cpu().numpy()
             logging.info(
                 "Epoch {} train loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
-                    epoch,
+                    epoch + 1,
                     train_loss / (i + 1),
                     train_auc,
                     train_auprc,
@@ -155,7 +156,7 @@ def main(conf):
                     "auc": train_auc,
                     "auprc": train_auprc,
                 },
-                epoch,
+                epoch + 1,
             )
             model.eval()
             with torch.no_grad():
@@ -180,7 +181,7 @@ def main(conf):
                 val_auprc = metric_auprc(all_outputs, all_labels).detach().cpu().numpy()
                 logging.info(
                     "Epoch {} val loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
-                        epoch,
+                        epoch + 1,
                         val_loss / (i + 1),
                         val_auc,
                         val_auprc,
@@ -189,11 +190,10 @@ def main(conf):
                 writer.add_scalars(
                     "val_{}".format(ion),
                     {
-                        "loss": val_loss / (i + 1),
                         "auc": val_auc,
                         "auprc": val_auprc,
                     },
-                    epoch,
+                    epoch + 1,
                 )
 
     logging.info(

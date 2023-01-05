@@ -100,10 +100,6 @@ class LMetalSiteBase(nn.Module):
             nn.Linear(feature_dim, self.hidden_dim),
             nn.LeakyReLU(),
         ]
-        # if feature_dim == 384:
-        #     modules.insert(
-        #         0, nn.Sigmoid()
-        #     )  # add a sigmoid for normalization Evoformer only
         self.input_block = nn.Sequential(*modules)
         if conf.fix_encoder:
             self.input_block.requires_grad_(False)
@@ -112,23 +108,23 @@ class LMetalSiteBase(nn.Module):
 
         # ion-specific layers
         self.ZN_head = nn.Sequential(
-            nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
-            nn.LeakyReLU(),
+            # nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
+            # nn.LeakyReLU(),
             nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.CA_head = nn.Sequential(
-            nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
-            nn.LeakyReLU(),
+            # nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
+            # nn.LeakyReLU(),
             nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.MG_head = nn.Sequential(
-            nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
-            nn.LeakyReLU(),
+            # nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
+            # nn.LeakyReLU(),
             nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.MN_head = nn.Sequential(
-            nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
-            nn.LeakyReLU(),
+            # nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
+            # nn.LeakyReLU(),
             nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.params = nn.ModuleDict(
