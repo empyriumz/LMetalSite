@@ -1,12 +1,12 @@
 {
     "general": {
         "seed": 1,
-        "gpu_id": 2,
+        "gpu_id": 1,
         "debug": 0
     },
     "data": {
         "data_path": "datasets",
-        "feature": "ProtTrans",
+        "feature": "Composite",
         "data_type": "original",
         "max_seq_len": 2000,
         "precomputed_feature": "precomputed_embedding",
@@ -27,13 +27,13 @@
     },
     "training": {
         "optimizer": "AdamW",
-        "pretrained_encoder": "results/autoencoder/2023-01-05-03-03/autoencoder_ProtTrans_epoch_40_loss_0.008.pt",
-        "encoder_learning_rate": 2e-4,
-        "learning_rate": 5e-4,
+        "pretrained_encoder": 0,
+        "encoder_learning_rate": 0.0003,
+        "learning_rate": 0.0005,
         "val_ratio": 0.25,
         "feature_batch_size": 4,
         "batch_size": 64,
-        "epochs": 15,
+        "epochs": 3,
         "weight_decay": 0.025
     }
 }

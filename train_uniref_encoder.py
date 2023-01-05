@@ -66,8 +66,8 @@ def main(conf):
     # loss_func = torch.nn.MSELoss()
     loss_func = torch.nn.SmoothL1Loss(beta=0.2)
     for j in range(3):
-        conf.data.fasta_path = (
-            "datasets/uniref_sample_plus_metal/sample_plus_metal.fasta.split/sample_plus_metal.part_00{}.fasta".format(j+1)
+        conf.data.fasta_path = "datasets/uniref_sample_plus_metal/sample_plus_metal.fasta.split/sample_plus_metal.part_00{}.fasta".format(
+            j + 1
         )
         dataset, _ = prep_dataset(conf, device)
         train_dataloader, val_dataloader = prep_dataloader(
