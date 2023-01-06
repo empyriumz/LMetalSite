@@ -94,8 +94,8 @@ class LMetalSiteBase(nn.Module):
         self.hidden_dim = conf.hidden_dim
         feature_dim = conf.feature_dim
         modules = [
-            # nn.Tanh(),  # add tanh to replace normalization
-            nn.LayerNorm(feature_dim, eps=1e-6),
+            # nn.LayerNorm(feature_dim, eps=1e-6),
+            nn.BatchNorm1d(feature_dim),
             nn.Dropout(conf.dropout),
             nn.Linear(feature_dim, self.hidden_dim),
             nn.LeakyReLU(),
@@ -108,23 +108,15 @@ class LMetalSiteBase(nn.Module):
 
         # ion-specific layers
         self.ZN_head = nn.Sequential(
-            # nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
-            # nn.LeakyReLU(),
             nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.CA_head = nn.Sequential(
-            # nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
-            # nn.LeakyReLU(),
             nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.MG_head = nn.Sequential(
-            # nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
-            # nn.LeakyReLU(),
             nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.MN_head = nn.Sequential(
-            # nn.Linear(self.hidden_dim, self.hidden_dim, bias=True),
-            # nn.LeakyReLU(),
             nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.params = nn.ModuleDict(

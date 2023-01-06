@@ -11,8 +11,12 @@ from .utils import load_esm_model
 
 max_repr_evo = np.load("script/Evoformer_repr_max.npy")
 min_repr_evo = np.load("script/Evoformer_repr_min.npy")
+mean_repr_evo = np.load("script/Evoformer_repr_mean.npy")
+std_repr_evo = np.load("script/Evoformer_repr_std.npy")
 max_repr_prot = np.load("script/ProtTrans_repr_max.npy")
 min_repr_prot = np.load("script/ProtTrans_repr_min.npy")
+mean_repr_prot = np.load("script/ProtTrans_repr_mean.npy")
+std_repr_prot = np.load("script/ProtTrans_repr_std.npy")
 max_repr_esm = np.load("script/ESM_repr_max.npy")
 min_repr_esm = np.load("script/ESM_repr_min.npy")
 
@@ -158,6 +162,8 @@ def composite_embedding(
 ):
     min_repr = np.concatenate((min_repr_prot, min_repr_evo))
     max_repr = np.concatenate((max_repr_prot, max_repr_evo))
+    mean_repr = np.concatenate((mean_repr_prot, mean_repr_evo))
+    std_repr = np.concatenate((std_repr_prot, std_repr_evo))
     protein_features = {}
     for id in ID_list:
         feature_evo = np.load(
@@ -169,6 +175,7 @@ def composite_embedding(
         seq_emd = np.concatenate((feature_prot, feature_evo["single"]), axis=1)
         if normalize:
             seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
+            # seq_emd = (seq_emd - mean_repr) / std_repr
         protein_features[id] = seq_emd
 
     return protein_features
@@ -211,6 +218,7 @@ def load_evoformer_embedding(
         # seq_emd = feature["pair"]
         if normalize:
             seq_emd = (seq_emd - min_repr_evo) / (max_repr_evo - min_repr_evo)
+            # seq_emd = (seq_emd - mean_repr_evo) / std_repr_evo
         protein_features[id] = seq_emd
 
     return protein_features
@@ -227,6 +235,7 @@ def prottrans_embedding(ID_list, seq_list, conf, device, normalize=True, ion_typ
             seq_emd = np.load(conf.data.precomputed_feature + file_name)
             if normalize:
                 seq_emd = (seq_emd - min_repr_prot) / (max_repr_prot - min_repr_prot)
+                # seq_emd = (seq_emd - mean_repr_prot) / std_repr_prot
             protein_features[id] = seq_emd
 
         return protein_features

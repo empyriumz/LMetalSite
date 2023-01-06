@@ -9,6 +9,8 @@ from timeit import default_timer as timer
 from torchmetrics.classification import (
     BinaryAUROC,
     BinaryAveragePrecision,
+    BinaryPrecision,
+    BinaryRecall,
 )
 from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
@@ -91,6 +93,8 @@ def main(conf):
 
     metric_auc = BinaryAUROC(thresholds=None)
     metric_auprc = BinaryAveragePrecision(thresholds=None)
+    metric_precision = BinaryPrecision()
+    metric_recall = BinaryRecall()
     model.training = True  # adding Gaussian noise to embedding
     ion_list = ["MG", "CA", "MN", "ZN"]
     pos_weights = []
@@ -129,22 +133,21 @@ def main(conf):
                 all_outputs.append(outputs)
                 all_labels.append(labels)
                 train_loss += loss_.detach().cpu().numpy()
-                # running_auc = metric_auc(outputs, labels)
-                # running_auprc = metric_auprc(outputs, labels)
-                # if i % LOG_INTERVAL == 0 and i > 0:
-                #     logging.info(
-                #         "Running train loss: {:.4f}, auc: {:.3f}, auprc: {:.3f}".format(
-                #             running_loss, running_auc, running_auprc
-                #         )
-                #     )
-            all_outputs = torch.cat(all_outputs)
-            all_labels = torch.cat(all_labels)
-            train_auc = metric_auc(all_outputs, all_labels).detach().cpu().numpy()
-            train_auprc = metric_auprc(all_outputs, all_labels).detach().cpu().numpy()
+
+            all_outputs = torch.cat(all_outputs).detach().cpu()
+            all_labels = torch.cat(all_labels).detach().cpu()
+            train_auc = metric_auc(all_outputs, all_labels)
+            train_auprc = metric_auprc(all_outputs, all_labels)
+            train_precision = metric_precision(all_outputs, all_labels)
+            train_recall = metric_recall(all_outputs, all_labels)
+            train_f1 = (
+                2 * (train_precision * train_recall) / (train_precision + train_recall)
+            )
             logging.info(
-                "Epoch {} train loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
+                "Epoch {} train loss {:.4f}, f1: {:.3f}, auc {:.3f}, auprc: {:.3f}".format(
                     epoch + 1,
                     train_loss / (i + 1),
+                    train_f1,
                     train_auc,
                     train_auprc,
                 )
@@ -155,6 +158,7 @@ def main(conf):
                     "loss": train_loss / (i + 1),
                     "auc": train_auc,
                     "auprc": train_auprc,
+                    "f1": train_f1,
                 },
                 epoch + 1,
             )
@@ -175,14 +179,18 @@ def main(conf):
                     all_labels.append(labels)
                     val_loss += loss_.detach().cpu().numpy()
 
-                all_outputs = torch.cat(all_outputs)
-                all_labels = torch.cat(all_labels)
-                val_auc = metric_auc(all_outputs, all_labels).detach().cpu().numpy()
-                val_auprc = metric_auprc(all_outputs, all_labels).detach().cpu().numpy()
+                all_outputs = torch.cat(all_outputs).detach().cpu()
+                all_labels = torch.cat(all_labels).detach().cpu()
+                val_auc = metric_auc(all_outputs, all_labels)
+                val_auprc = metric_auprc(all_outputs, all_labels)
+                val_precision = metric_precision(all_outputs, all_labels)
+                val_recall = metric_recall(all_outputs, all_labels)
+                val_f1 = 2 * (val_precision * val_recall) / (val_precision + val_recall)
                 logging.info(
-                    "Epoch {} val loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
+                    "Epoch {} val loss {:.4f}, f1: {:.3f}, auc {:.3f}, auprc: {:.3f}".format(
                         epoch + 1,
                         val_loss / (i + 1),
+                        val_f1,
                         val_auc,
                         val_auprc,
                     )
@@ -192,6 +200,7 @@ def main(conf):
                     {
                         "auc": val_auc,
                         "auprc": val_auprc,
+                        "f1": val_f1,
                     },
                     epoch + 1,
                 )
