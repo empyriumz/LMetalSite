@@ -94,8 +94,7 @@ class LMetalSiteBase(nn.Module):
         self.hidden_dim = conf.hidden_dim
         self.feature_dim = conf.feature_dim
         modules = [
-            # nn.LayerNorm(feature_dim, eps=1e-6),
-            nn.BatchNorm1d(self.feature_dim),
+            nn.LayerNorm(self.feature_dim, eps=1e-6),
             nn.Dropout(conf.dropout),
             nn.Linear(self.feature_dim, self.hidden_dim),
             nn.LeakyReLU(),
@@ -165,13 +164,11 @@ class LMetalSiteTwoLayer(LMetalSiteBase):
         assert self.hidden_dim == self.hidden_dim_2
         self.feature_dim = conf.feature_dim
         modules = [
-            # nn.LayerNorm(self.feature_dim, eps=1e-6),
-            nn.BatchNorm1d(self.feature_dim),
+            nn.LayerNorm(self.feature_dim, eps=1e-6),
             nn.Dropout(conf.dropout),
             nn.Linear(self.feature_dim, self.hidden_dim_1),
             nn.LeakyReLU(),
-            #nn.LayerNorm(self.hidden_dim_1, eps=1e-6),
-            nn.BatchNorm1d(self.hidden_dim_1),
+            nn.LayerNorm(self.hidden_dim_1, eps=1e-6),
             nn.Dropout(conf.dropout),
             nn.Linear(self.hidden_dim_1, self.hidden_dim_2),
             nn.LeakyReLU(),
@@ -179,6 +176,36 @@ class LMetalSiteTwoLayer(LMetalSiteBase):
         self.input_block = nn.Sequential(*modules)
         self.params.update({"encoder": self.input_block})
 
+
+class LMetalSiteLSTM(LMetalSiteBase):
+    def __init__(self, conf, training=True):
+        super(LMetalSiteLSTM, self).__init__(conf, training=training)
+        self.hidden_dim_1 = conf.hidden_dim_1
+        self.hidden_dim_2 = conf.hidden_dim_2
+        assert self.hidden_dim == self.hidden_dim_2
+        self.feature_dim = conf.feature_dim
+        modules = [
+            nn.LayerNorm(self.feature_dim, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(self.feature_dim, self.hidden_dim_1),
+            nn.LeakyReLU(),
+            nn.LayerNorm(self.hidden_dim_1, eps=1e-6),
+            nn.LSTM(
+                self.hidden_dim_1,
+                hidden_size=self.hidden_dim_2 // 2,
+                batch_first=True,
+                bidirectional=True,
+            ),
+        ]
+        self.input_block = nn.Sequential(*modules)
+        self.params.update({"encoder": self.input_block})
+
+    def forward(self, protein_feat, mask):
+        protein_feat = self.add_noise(protein_feat)
+        h_V = self.input_block(protein_feat)[0]
+        logits = self.get_logits(h_V)
+
+        return logits
 
 
 class LMetalSite(LMetalSiteBase):

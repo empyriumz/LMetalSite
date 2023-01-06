@@ -15,9 +15,9 @@
     },
     "model": {
         "name": "twolayer",
-        "hidden_dim": 128,
+        "hidden_dim": 256,
         "hidden_dim_1": 512,
-        "hidden_dim_2": 128,
+        "hidden_dim_2": 256,
         "num_encoder_layers": 2,
         "num_heads": 4,
         "augment_eps": 0.05,
@@ -33,7 +33,7 @@
         "val_ratio": 0.25,
         "feature_batch_size": 4,
         "batch_size": 64,
-        "epochs": 15,
+        "epochs": 20,
         "weight_decay": 0.03
     }
 }

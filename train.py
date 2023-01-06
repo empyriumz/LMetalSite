@@ -19,7 +19,7 @@ from script.utils import (
     parse_arguments,
 )
 from data.data_process import prep_dataset, prep_dataloader
-from model.model import LMetalSite, LMetalSiteBase, LMetalSiteTwoLayer
+from model.model import LMetalSite, LMetalSiteBase, LMetalSiteTwoLayer, LMetalSiteLSTM
 
 LOG_INTERVAL = 50
 
@@ -56,6 +56,8 @@ def main(conf):
         model = LMetalSiteTwoLayer(conf.model).to(device)
     elif conf.model.name == "transformer":
         model = LMetalSite(conf.model).to(device)
+    elif conf.model.name == "lstm":
+        model = LMetalSiteLSTM(conf.model).to(device)
     else:
         raise NotImplementedError("Invalid model name")
 
@@ -115,7 +117,7 @@ def main(conf):
             )
             logging.info("Training for {}".format(ion))
             model.ion_type = ion
-
+            model.train()
             train_loss = 0.0
             all_outputs, all_labels = [], []
             for i, batch_data in tqdm(enumerate(dataloader_train[k])):
@@ -138,16 +140,10 @@ def main(conf):
             all_labels = torch.cat(all_labels).detach().cpu()
             train_auc = metric_auc(all_outputs, all_labels)
             train_auprc = metric_auprc(all_outputs, all_labels)
-            train_precision = metric_precision(all_outputs, all_labels)
-            train_recall = metric_recall(all_outputs, all_labels)
-            train_f1 = (
-                2 * (train_precision * train_recall) / (train_precision + train_recall)
-            )
             logging.info(
-                "Epoch {} train loss {:.4f}, f1: {:.3f}, auc {:.3f}, auprc: {:.3f}".format(
+                "Epoch {} train loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
                     epoch + 1,
                     train_loss / (i + 1),
-                    train_f1,
                     train_auc,
                     train_auprc,
                 )
@@ -158,7 +154,6 @@ def main(conf):
                     "loss": train_loss / (i + 1),
                     "auc": train_auc,
                     "auprc": train_auprc,
-                    "f1": train_f1,
                 },
                 epoch + 1,
             )
@@ -183,14 +178,10 @@ def main(conf):
                 all_labels = torch.cat(all_labels).detach().cpu()
                 val_auc = metric_auc(all_outputs, all_labels)
                 val_auprc = metric_auprc(all_outputs, all_labels)
-                val_precision = metric_precision(all_outputs, all_labels)
-                val_recall = metric_recall(all_outputs, all_labels)
-                val_f1 = 2 * (val_precision * val_recall) / (val_precision + val_recall)
                 logging.info(
-                    "Epoch {} val loss {:.4f}, f1: {:.3f}, auc {:.3f}, auprc: {:.3f}".format(
+                    "Epoch {} val loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
                         epoch + 1,
                         val_loss / (i + 1),
-                        val_f1,
                         val_auc,
                         val_auprc,
                     )
@@ -200,7 +191,6 @@ def main(conf):
                     {
                         "auc": val_auc,
                         "auprc": val_auprc,
-                        "f1": val_f1,
                     },
                     epoch + 1,
                 )
