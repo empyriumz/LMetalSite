@@ -92,12 +92,12 @@ class LMetalSiteBase(nn.Module):
         self.augment_eps = conf.augment_eps
         self.training = training
         self.hidden_dim = conf.hidden_dim
-        feature_dim = conf.feature_dim
+        self.feature_dim = conf.feature_dim
         modules = [
             # nn.LayerNorm(feature_dim, eps=1e-6),
-            nn.BatchNorm1d(feature_dim),
+            nn.BatchNorm1d(self.feature_dim),
             nn.Dropout(conf.dropout),
-            nn.Linear(feature_dim, self.hidden_dim),
+            nn.Linear(self.feature_dim, self.hidden_dim),
             nn.LeakyReLU(),
         ]
         self.input_block = nn.Sequential(*modules)
@@ -165,25 +165,20 @@ class LMetalSiteTwoLayer(LMetalSiteBase):
         assert self.hidden_dim == self.hidden_dim_2
         self.feature_dim = conf.feature_dim
         modules = [
-            nn.LayerNorm(self.feature_dim, eps=1e-6),
+            # nn.LayerNorm(self.feature_dim, eps=1e-6),
+            nn.BatchNorm1d(self.feature_dim),
             nn.Dropout(conf.dropout),
             nn.Linear(self.feature_dim, self.hidden_dim_1),
             nn.LeakyReLU(),
-            nn.LayerNorm(self.hidden_dim_1, eps=1e-6),
+            #nn.LayerNorm(self.hidden_dim_1, eps=1e-6),
+            nn.BatchNorm1d(self.hidden_dim_1),
             nn.Dropout(conf.dropout),
             nn.Linear(self.hidden_dim_1, self.hidden_dim_2),
             nn.LeakyReLU(),
         ]
         self.input_block = nn.Sequential(*modules)
         self.params.update({"encoder": self.input_block})
-        # self.params = nn.ModuleDict(
-        #     {
-        #         "encoder": nn.ModuleList([self.input_block]),
-        #         "classifier": nn.ModuleList(
-        #             [self.MN_head, self.MG_head, self.CA_head, self.ZN_head]
-        #         ),
-        #     }
-        # )
+
 
 
 class LMetalSite(LMetalSiteBase):
