@@ -59,16 +59,16 @@ def main(conf):
     metric_auprc = BinaryAveragePrecision(thresholds=None)
     log_interval = 2 * conf.training.batch_size
     model.training = True  # adding Gaussian noise to embedding
-    for ion in ["ZN", "MN", "MG", "CA"]:
-        dataset, pos_weight = prep_dataset(conf, device, ion_type=ion)
+    for ligand in ["ZN", "MN", "MG", "CA"]:
+        dataset, pos_weight = prep_dataset(conf, device, ligand=ligand)
         train_dataloader, val_dataloader = prep_dataloader(
-            dataset, conf, random_seed=RANDOM_SEED, ion_type=ion
+            dataset, conf, random_seed=RANDOM_SEED, ligand=ligand
         )
         loss_func = torch.nn.BCEWithLogitsLoss(
             pos_weight=torch.sqrt(torch.tensor(pos_weight))
         )
         # loss_func = torch.nn.BCEWithLogitsLoss()
-        model.ion_type = ion
+        model.ligand = ligand
         for epoch in range(conf.training.epochs):
             train_loss = 0.0
             all_outputs, all_labels = [], []

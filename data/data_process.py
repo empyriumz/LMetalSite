@@ -63,7 +63,7 @@ def process_fasta_biopython(fasta_file):
 
 
 def feature_extraction(
-    ID_list, seq_list, conf, device, ion_type=None, feature_name="ProtTrans"
+    ID_list, seq_list, conf, device, ligand=None, feature_name="ProtTrans"
 ):
     assert feature_name in [
         "Evoformer",
@@ -81,7 +81,7 @@ def feature_extraction(
             ID_list,
             conf.data.precomputed_feature,
             normalize=conf.data.normalize,
-            ion_type=ion_type,
+            ligand=ligand,
         )
     elif feature_name == "ProtTrans":
         protein_features = prottrans_embedding(
@@ -90,21 +90,21 @@ def feature_extraction(
             conf,
             device,
             normalize=conf.data.normalize,
-            ion_type=ion_type,
+            ligand=ligand,
         )
     elif feature_name == "Composite":
         protein_features = composite_embedding(
             ID_list,
             conf.data.precomputed_feature,
             normalize=conf.data.normalize,
-            ion_type=ion_type,
+            ligand=ligand,
         )
     elif feature_name == "Composite_ESM":
         protein_features = composite_embedding_esm(
             ID_list,
             conf.data.precomputed_feature,
             normalize=conf.data.normalize,
-            ion_type=ion_type,
+            ligand=ligand,
         )
     elif feature_name == "ESM":
         protein_features = esm_embedding(
@@ -113,24 +113,24 @@ def feature_extraction(
             conf,
             device,
             normalize=conf.data.normalize,
-            ion_type=ion_type,
+            ligand=ligand,
         )
     elif feature_name == "MultiModal":
         protein_features = multimodal_embedding(
             ID_list,
             conf.data.precomputed_feature,
             normalize=conf.data.normalize,
-            ion_type=ion_type,
+            ligand=ligand,
         )
 
     return protein_features
 
 
-def prep_dataset(conf, device, ion_type=None, tokenizer=None):
+def prep_dataset(conf, device, ligand=None, tokenizer=None):
     assert conf.data.data_type in ["original", "finetune", "multi_modal", "uniref"]
     pos_weight = None
     if conf.data.data_type != "uniref":
-        fasta_path = conf.data.data_path + "/{}_train.fa".format(ion_type)
+        fasta_path = conf.data.data_path + "/{}_train.fa".format(ligand)
 
     if conf.data.data_type == "uniref":
         ID_list, seq_list = process_fasta_biopython(conf.data.fasta_path)
@@ -143,7 +143,7 @@ def prep_dataset(conf, device, ion_type=None, tokenizer=None):
         seq_list,
         conf,
         device,
-        ion_type=ion_type,
+        ligand=ligand,
         feature_name=conf.data.feature,
     )
     if conf.data.data_type == "original":
@@ -159,7 +159,7 @@ def prep_dataset(conf, device, ion_type=None, tokenizer=None):
     return dataset, pos_weight
 
 
-def prep_dataloader(dataset, conf, random_seed=0, ion_type="ZN"):
+def prep_dataloader(dataset, conf, random_seed=0, ligand="ZN"):
     n_val = int(len(dataset) * conf.training.val_ratio)
     n_train = len(dataset) - n_val
     train_dataset, val_dataset = torch.utils.data.random_split(
@@ -167,7 +167,7 @@ def prep_dataloader(dataset, conf, random_seed=0, ion_type="ZN"):
     )
     logging.info(
         "\nTraining sequences for {}: {}; validation sequences {}".format(
-            ion_type, len(train_dataset), len(val_dataset)
+            ligand, len(train_dataset), len(val_dataset)
         )
     )
     train_dataloader = DataLoader(
@@ -192,8 +192,8 @@ def prep_dataloader(dataset, conf, random_seed=0, ion_type="ZN"):
     return train_dataloader, val_dataloader
 
 
-def finetune_data_loader(conf, tokenizer, random_seed=0, ion_type="ZN"):
-    fasta_path = conf.data.data_path + "/{}_train.fa".format(ion_type)
+def finetune_data_loader(conf, tokenizer, random_seed=0, ligand="ZN"):
+    fasta_path = conf.data.data_path + "/{}_train.fa".format(ligand)
     ID_list, seq_list, label_list = process_fasta(fasta_path, conf.data.max_seq_len)
     pos_weight = calculate_pos_weight(label_list)
     dataset = FineTuneDataset(ID_list, seq_list, label_list, tokenizer)
@@ -204,7 +204,7 @@ def finetune_data_loader(conf, tokenizer, random_seed=0, ion_type="ZN"):
     )
     logging.info(
         "\nTraining sequences for {}: {}; validation sequences {}".format(
-            ion_type, len(train_dataset), len(val_dataset)
+            ligand, len(train_dataset), len(val_dataset)
         )
     )
     train_dataloader = DataLoader(

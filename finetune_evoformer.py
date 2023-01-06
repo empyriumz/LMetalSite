@@ -121,8 +121,8 @@ def main(conf):
 
     metric_auc = BinaryAUROC(thresholds=None)
     metric_auprc = BinaryAveragePrecision(thresholds=None)
-    for ion in ["CA"]:
-        fasta_path = conf.data.fasta_path + "/{}_train.fa".format(ion)
+    for ligand in ["CA"]:
+        fasta_path = conf.data.fasta_path + "/{}_train.fa".format(ligand)
         ID_list, seq_list, label_list = process_fasta(fasta_path)
         sorted_targets = list(zip(*(ID_list, seq_list)))
         feature_dicts = {}

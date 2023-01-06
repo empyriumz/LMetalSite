@@ -57,13 +57,13 @@ def main(conf):
         )
     best_loss = 1000
     model.training = True  # adding Gaussian noise to embedding
-    for ion in ["ZN", "MN", "MG", "CA"]:
-        dataset, _ = prep_dataset(conf, device, ion_type=ion)
+    for ligand in ["ZN", "MN", "MG", "CA"]:
+        dataset, _ = prep_dataset(conf, device, ligand=ligand)
         train_dataloader, val_dataloader = prep_dataloader(
-            dataset, conf, random_seed=RANDOM_SEED, ion_type=ion
+            dataset, conf, random_seed=RANDOM_SEED, ligand=ligand
         )
         loss_func = torch.nn.MSELoss()
-        model.ion_type = ion
+        model.ligand = ligand
         for epoch in range(conf.training.epochs):
             train_loss = 0.0
             for i, batch_data in tqdm(enumerate(train_dataloader)):

@@ -60,14 +60,14 @@ def train(conf):
 
     metric_auc = BinaryAUROC(thresholds=None)
     metric_auprc = BinaryAveragePrecision(thresholds=None)
-    for ion in ["MN", "ZN", "MG", "CA"]:
+    for ligand in ["MN", "ZN", "MG", "CA"]:
         model.training = True
-        model.ion_type = ion
+        model.ligand = ligand
         dataset, pos_weight = prep_dataset(
-            conf, device, tokenizer=tokenizer, ion_type=ion
+            conf, device, tokenizer=tokenizer, ligand=ligand
         )
         train_dataloader, val_dataloader = prep_dataloader(
-            dataset, conf, random_seed=RANDOM_SEED, ion_type=ion
+            dataset, conf, random_seed=RANDOM_SEED, ligand=ligand
         )
         loss_func = torch.nn.BCEWithLogitsLoss(
             pos_weight=torch.sqrt(torch.tensor(pos_weight))

@@ -22,7 +22,7 @@
         "num_heads": 4,
         "augment_eps": 0.05,
         "dropout": 0.2,
-        "ion_type": "CA"
+        "ligand": "CA"
     },
     "training": 
         {

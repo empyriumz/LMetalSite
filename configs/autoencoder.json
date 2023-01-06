@@ -23,7 +23,7 @@
         "num_heads": 4,
         "augment_eps": 0.1,
         "dropout": 0.3,
-        "ion_type": "CA"
+        "ligand": "CA"
     },
     "training": {
         "optimizer": "AdamW",

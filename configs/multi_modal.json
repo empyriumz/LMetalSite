@@ -25,7 +25,7 @@
         "augment_eps": 0.1,
         "dropout": 0.3,
         "attn_mask": 1,
-        "ion_type": "CA",
+        "ligand": "CA",
         "fix_encoder": 0
     },
     "training": 

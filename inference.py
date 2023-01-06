@@ -46,7 +46,7 @@ def main(conf):
             conf.model.num_heads,
             conf.model.augment_eps,
             conf.model.dropout,
-            conf.model.ion_type,
+            conf.model.ligand,
         ).to(device)
 
         state_dict = torch.load("model/" + "fold{}.ckpt".format(i), device)
@@ -59,10 +59,10 @@ def main(conf):
     metric_auprc = BinaryAveragePrecision(thresholds=None)
 
     model.training = False  # adding Gaussian noise to embedding
-    for ion in ["MN", "ZN", "MG", "CA"]:
-        dataset, _ = prep_dataset(conf, device, ion_type=ion)
+    for ligand in ["MN", "ZN", "MG", "CA"]:
+        dataset, _ = prep_dataset(conf, device, ligand=ligand)
         _, val_dataloader = prep_dataloader(
-            dataset, conf, random_seed=RANDOM_SEED, ion_type=ion
+            dataset, conf, random_seed=RANDOM_SEED, ligand=ligand
         )
         with torch.no_grad():
             all_outputs, all_labels = [], []
@@ -71,7 +71,7 @@ def main(conf):
                 feats = feats.to(device)
                 masks = masks.to(device)
                 labels = labels.to(device)
-                model.ion_type = ion
+                model.ligand = ligand
                 outputs = [model(feats, masks) for model in models]
                 outputs = torch.stack(outputs).mean(0)
                 labels = torch.masked_select(labels, masks.bool())

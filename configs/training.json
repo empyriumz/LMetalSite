@@ -1,12 +1,12 @@
 {
     "general": {
         "seed": 1,
-        "gpu_id": 1,
+        "gpu_id": 2,
         "debug": 0
     },
     "data": {
         "data_path": "datasets",
-        "feature": "Composite",
+        "feature": "ESM",
         "data_type": "original",
         "max_seq_len": 2000,
         "precomputed_feature": "precomputed_embedding",
@@ -22,7 +22,7 @@
         "num_heads": 4,
         "augment_eps": 0.05,
         "dropout": 0.3,
-        "ion_type": "CA",
+        "ligand": "DNA",
         "fix_encoder": 0
     },
     "training": {
@@ -33,7 +33,7 @@
         "val_ratio": 0.25,
         "feature_batch_size": 4,
         "batch_size": 64,
-        "epochs": 20,
+        "epochs": 30,
         "weight_decay": 0.03
     }
 }

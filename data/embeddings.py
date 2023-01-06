@@ -21,18 +21,24 @@ max_repr_esm = np.load("script/ESM_repr_max.npy")
 min_repr_esm = np.load("script/ESM_repr_min.npy")
 
 
-def esm_embedding(ID_list, seq_list, conf, device, normalize=True, ion_type="ZN"):
+def esm_embedding(ID_list, seq_list, conf, device, normalize=True, ligand="ZN"):
     protein_features = {}
     if conf.data.precomputed_feature:
         for id in ID_list:
             try:
                 seq_emd = np.load(conf.data.precomputed_feature + "/{}.npy".format(id))
             except:
-                tmp = np.load(
-                    conf.data.precomputed_feature
-                    + "/{}_esm/{}.npz".format(ion_type, id)
-                )
-                seq_emd = tmp["embedding"]
+                if ligand == "DNA" or ligand == "RNA":
+                    seq_emd = np.load(
+                        conf.data.precomputed_feature
+                        + "/{}_esm/{}.npy".format(ligand, id)
+                    )
+                else:
+                    tmp = np.load(
+                        conf.data.precomputed_feature
+                        + "/{}_esm/{}.npz".format(ligand, id)
+                    )
+                    seq_emd = tmp["embedding"]
             if normalize:
                 seq_emd = (seq_emd - min_repr_esm) / (max_repr_esm - min_repr_esm)
             protein_features[id] = seq_emd
@@ -105,7 +111,7 @@ def esm_embedding(ID_list, seq_list, conf, device, normalize=True, ion_type="ZN"
 
 
 def esm_embedding_obsolete(
-    ID_list, seq_list, conf, device, normalize=True, ion_type="ZN"
+    ID_list, seq_list, conf, device, normalize=True, ligand="ZN"
 ):
     protein_features = {}
     if conf.data.precomputed_feature:
@@ -114,8 +120,7 @@ def esm_embedding_obsolete(
                 seq_emd = np.load(conf.data.precomputed_feature + "/{}.npy".format(id))
             except:
                 tmp = np.load(
-                    conf.data.precomputed_feature
-                    + "/{}_esm/{}.npz".format(ion_type, id)
+                    conf.data.precomputed_feature + "/{}_esm/{}.npz".format(ligand, id)
                 )
                 seq_emd = tmp["embedding"]
             if normalize:
@@ -157,22 +162,26 @@ def esm_embedding_obsolete(
                     protein_features[batch_labels[seq_num]] = seq_emd
 
 
-def composite_embedding(
-    ID_list, precomputed_feature_path, normalize=True, ion_type="ZN"
-):
+def composite_embedding(ID_list, precomputed_feature_path, normalize=True, ligand="ZN"):
     min_repr = np.concatenate((min_repr_prot, min_repr_evo))
     max_repr = np.concatenate((max_repr_prot, max_repr_evo))
-    mean_repr = np.concatenate((mean_repr_prot, mean_repr_evo))
-    std_repr = np.concatenate((std_repr_prot, std_repr_evo))
+    # mean_repr = np.concatenate((mean_repr_prot, mean_repr_evo))
+    # std_repr = np.concatenate((std_repr_prot, std_repr_evo))
     protein_features = {}
     for id in ID_list:
-        feature_evo = np.load(
-            precomputed_feature_path + "/{}_Evoformer/{}.npz".format(ion_type, id)
-        )
+        if ligand != "DNA":
+            feature_evo = np.load(
+                precomputed_feature_path + "/{}_Evoformer/{}.npz".format(ligand, id)
+            )
+            feature_evo = feature_evo["single"]
+        else:
+            feature_evo = np.load(
+                precomputed_feature_path + "/{}_Evoformer/{}.npy".format(ligand, id)
+            )
         feature_prot = np.load(
-            precomputed_feature_path + "/{}_ProtTrans/{}.npy".format(ion_type, id)
+            precomputed_feature_path + "/{}_ProtTrans/{}.npy".format(ligand, id)
         )
-        seq_emd = np.concatenate((feature_prot, feature_evo["single"]), axis=1)
+        seq_emd = np.concatenate((feature_prot, feature_evo), axis=1)
         if normalize:
             seq_emd = (seq_emd - min_repr) / (max_repr - min_repr)
             # seq_emd = (seq_emd - mean_repr) / std_repr
@@ -182,17 +191,17 @@ def composite_embedding(
 
 
 def composite_embedding_esm(
-    ID_list, precomputed_feature_path, normalize=True, ion_type="ZN"
+    ID_list, precomputed_feature_path, normalize=True, ligand="ZN"
 ):
     min_repr = np.concatenate((min_repr_esm, min_repr_evo))
     max_repr = np.concatenate((max_repr_esm, max_repr_evo))
     protein_features = {}
     for id in ID_list:
         feature_evo = np.load(
-            precomputed_feature_path + "/{}_Evoformer/{}.npz".format(ion_type, id)
+            precomputed_feature_path + "/{}_Evoformer/{}.npz".format(ligand, id)
         )
         feature_prot = np.load(
-            precomputed_feature_path + "/{}_esm/{}.npz".format(ion_type, id)
+            precomputed_feature_path + "/{}_esm/{}.npz".format(ligand, id)
         )
 
         seq_emd = np.concatenate(
@@ -206,16 +215,20 @@ def composite_embedding_esm(
 
 
 def load_evoformer_embedding(
-    ID_list, precomputed_feature_path, normalize=True, ion_type="ZN"
+    ID_list, precomputed_feature_path, normalize=True, ligand="ZN"
 ):
     protein_features = {}
     for id in ID_list:
-        feature = np.load(
-            precomputed_feature_path + "/{}_Evoformer/{}.npz".format(ion_type, id)
-        )
-        # seq_emd = np.concatenate((feature["single"], feature["pair"]), axis=1)
-        seq_emd = feature["single"]
-        # seq_emd = feature["pair"]
+        try:
+            feature = np.load(
+                precomputed_feature_path + "/{}_Evoformer/{}.npz".format(ligand, id)
+            )
+            # seq_emd = np.concatenate((feature["single"], feature["pair"]), axis=1)
+            seq_emd = feature["single"]
+        except:
+            seq_emd = np.load(
+                precomputed_feature_path + "/{}_Evoformer/{}.npy".format(ligand, id)
+            )
         if normalize:
             seq_emd = (seq_emd - min_repr_evo) / (max_repr_evo - min_repr_evo)
             # seq_emd = (seq_emd - mean_repr_evo) / std_repr_evo
@@ -224,12 +237,12 @@ def load_evoformer_embedding(
     return protein_features
 
 
-def prottrans_embedding(ID_list, seq_list, conf, device, normalize=True, ion_type=None):
+def prottrans_embedding(ID_list, seq_list, conf, device, normalize=True, ligand=None):
     protein_features = {}
     if conf.data.precomputed_feature:
         for id in ID_list:
-            if ion_type is not None:
-                file_name = "/{}_ProtTrans/{}.npy".format(ion_type, id)
+            if ligand is not None:
+                file_name = "/{}_ProtTrans/{}.npy".format(ligand, id)
             else:
                 file_name = "/{}.npy".format(id)
             seq_emd = np.load(conf.data.precomputed_feature + file_name)
@@ -294,15 +307,15 @@ def prottrans_embedding(ID_list, seq_list, conf, device, normalize=True, ion_typ
 
 
 def multimodal_embedding(
-    ID_list, precomputed_feature_path, normalize=True, ion_type="ZN"
+    ID_list, precomputed_feature_path, normalize=True, ligand="ZN"
 ):
     protein_features = {}
     for id in ID_list:
         feature_evo = np.load(
-            precomputed_feature_path + "/{}_Evoformer/{}.npz".format(ion_type, id)
+            precomputed_feature_path + "/{}_Evoformer/{}.npz".format(ligand, id)
         )
         feature_prot = np.load(
-            precomputed_feature_path + "/{}_ProtTrans/{}.npy".format(ion_type, id)
+            precomputed_feature_path + "/{}_ProtTrans/{}.npy".format(ligand, id)
         )
         if normalize:
             feature_prot = (feature_prot - min_repr_prot) / (
@@ -318,11 +331,11 @@ def multimodal_embedding(
 
 
 def multimodal_embedding_contact_map(
-    ID_list, precomputed_feature_path, normalize=True, ion_type="ZN"
+    ID_list, precomputed_feature_path, normalize=True, ligand="ZN"
 ):
     protein_features = {}
     for id in ID_list:
-        tmp = np.load(precomputed_feature_path + "/{}_esm/{}.npz".format(ion_type, id))
+        tmp = np.load(precomputed_feature_path + "/{}_esm/{}.npz".format(ligand, id))
         seq_emd = tmp["embedding"]
         contact_map = tmp["contact"]
         if normalize:

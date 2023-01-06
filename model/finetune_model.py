@@ -4,11 +4,11 @@ import torch
 
 
 class MetalIonSiteClassification(nn.Module):
-    def __init__(self, backbone, config, training=True, ion_type="ZN"):
+    def __init__(self, backbone, config, training=True, ligand="ZN"):
         super().__init__()
         self.config = config
         self.backbone = backbone
-        self.ion_type = ion_type
+        self.ligand = ligand
         self.training = training
 
         if self.config.training.fix_backbone_weight:
@@ -22,7 +22,7 @@ class MetalIonSiteClassification(nn.Module):
             self.config.model.augment_eps,
             self.config.model.dropout,
             training=self.training,
-            ion_type=self.ion_type,
+            ligand=self.ligand,
         )
 
     def forward(self, input_ids, attention_mask):
@@ -36,11 +36,11 @@ class MetalIonSiteClassification(nn.Module):
 
 
 class MetalIonSiteEvoformer(nn.Module):
-    def __init__(self, backbone, config, ion_type="ZN"):
+    def __init__(self, backbone, config, ligand="ZN"):
         super().__init__()
         self.config = config
         self.backbone = backbone
-        self.ion_type = ion_type
+        self.ligand = ligand
 
         if self.config.training.fix_backbone_weight:
             self.backbone.requires_grad_(False)
@@ -52,7 +52,7 @@ class MetalIonSiteEvoformer(nn.Module):
             self.config.model.num_heads,
             self.config.model.augment_eps,
             self.config.model.dropout,
-            self.ion_type,
+            self.ligand,
         )
 
     def forward(self, input_feature):

@@ -14,14 +14,14 @@ class LMetalSite_Test(nn.Module):
         num_heads=4,
         augment_eps=0.05,
         dropout=0.2,
-        ion_type="ZN",
+        ligand="ZN",
     ):
         super(LMetalSite_Test, self).__init__()
 
         # Hyperparameters
         self.augment_eps = augment_eps
-        assert ion_type in ["ZN", "CA", "MG", "MN"]
-        self.ion_type = ion_type
+        assert ligand in ["ZN", "CA", "MG", "MN"]
+        self.ligand = ligand
         # Embedding layers
         self.input_block = nn.Sequential(
             nn.LayerNorm(feature_dim, eps=1e-6),
@@ -44,7 +44,7 @@ class LMetalSite_Test(nn.Module):
                 for _ in range(num_encoder_layers)
             ]
         )
-        # ion-specific layers
+        # ligand-specific layers
         self.FC_ZN1 = nn.Linear(hidden_dim, hidden_dim, bias=True)
         self.FC_ZN2 = nn.Linear(hidden_dim, 1, bias=True)
         self.FC_CA1 = nn.Linear(hidden_dim, hidden_dim, bias=True)
@@ -72,13 +72,13 @@ class LMetalSite_Test(nn.Module):
         for layer in self.encoder_layers:
             h_V = layer(h_V, mask)
 
-        if self.ion_type == "ZN":
+        if self.ligand == "ZN":
             logits = self.FC_ZN2(F.leaky_relu(self.FC_ZN1(h_V))).squeeze(-1)
-        elif self.ion_type == "CA":
+        elif self.ligand == "CA":
             logits = self.FC_CA2(F.leaky_relu(self.FC_CA1(h_V))).squeeze(-1)
-        elif self.ion_type == "MN":
+        elif self.ligand == "MN":
             logits = self.FC_MN2(F.leaky_relu(self.FC_MN1(h_V))).squeeze(-1)
-        elif self.ion_type == "MG":
+        elif self.ligand == "MG":
             logits = self.FC_MG2(F.leaky_relu(self.FC_MG1(h_V))).squeeze(-1)
 
         return logits
@@ -102,10 +102,10 @@ class LMetalSiteBase(nn.Module):
         self.input_block = nn.Sequential(*modules)
         if conf.fix_encoder:
             self.input_block.requires_grad_(False)
-        assert conf.ion_type in ["ZN", "CA", "MG", "MN"]
-        self.ion_type = conf.ion_type
+        assert conf.ligand in ["ZN", "CA", "MG", "MN", "DNA", "RNA"]
+        self.ligand = conf.ligand
 
-        # ion-specific layers
+        # ligand-specific layers
         self.ZN_head = nn.Sequential(
             nn.Linear(self.hidden_dim, 1, bias=True),
         )
@@ -116,6 +116,12 @@ class LMetalSiteBase(nn.Module):
             nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.MN_head = nn.Sequential(
+            nn.Linear(self.hidden_dim, 1, bias=True),
+        )
+        self.DNA_head = nn.Sequential(
+            nn.Linear(self.hidden_dim, 1, bias=True),
+        )
+        self.RNA_head = nn.Sequential(
             nn.Linear(self.hidden_dim, 1, bias=True),
         )
         self.params = nn.ModuleDict(
@@ -137,14 +143,18 @@ class LMetalSiteBase(nn.Module):
         return input
 
     def get_logits(self, input):
-        if self.ion_type == "ZN":
+        if self.ligand == "ZN":
             logits = self.ZN_head(input).squeeze(-1)
-        elif self.ion_type == "CA":
+        elif self.ligand == "CA":
             logits = self.CA_head(input).squeeze(-1)
-        elif self.ion_type == "MN":
+        elif self.ligand == "MN":
             logits = self.MN_head(input).squeeze(-1)
-        elif self.ion_type == "MG":
+        elif self.ligand == "MG":
             logits = self.MG_head(input).squeeze(-1)
+        elif self.ligand == "DNA":
+            logits = self.DNA_head(input).squeeze(-1)
+        elif self.ligand == "RNA":
+            logits = self.RNA_head(input).squeeze(-1)
 
         return logits
 

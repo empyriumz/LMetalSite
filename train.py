@@ -9,8 +9,6 @@ from timeit import default_timer as timer
 from torchmetrics.classification import (
     BinaryAUROC,
     BinaryAveragePrecision,
-    BinaryPrecision,
-    BinaryRecall,
 )
 from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
@@ -95,28 +93,27 @@ def main(conf):
 
     metric_auc = BinaryAUROC(thresholds=None)
     metric_auprc = BinaryAveragePrecision(thresholds=None)
-    metric_precision = BinaryPrecision()
-    metric_recall = BinaryRecall()
     model.training = True  # adding Gaussian noise to embedding
-    ion_list = ["MG", "CA", "MN", "ZN"]
+    ligand_list = ["DNA", "RNA", "MG", "CA", "MN", "ZN"]
+    # ligand_list = ["MG", "CA", "MN", "ZN"]
     pos_weights = []
     dataloader_train, dataloader_val = [], []
-    for ion in ion_list:
-        dataset, pos_weight = prep_dataset(conf, device, ion_type=ion)
+    for ligand in ligand_list:
+        dataset, pos_weight = prep_dataset(conf, device, ligand=ligand)
         train_dataloader, val_dataloader = prep_dataloader(
-            dataset, conf, random_seed=RANDOM_SEED, ion_type=ion
+            dataset, conf, random_seed=RANDOM_SEED, ligand=ligand
         )
         dataloader_train.append(train_dataloader)
         dataloader_val.append(val_dataloader)
         pos_weights.append(pos_weight)
 
     for epoch in range(conf.training.epochs):
-        for k, ion in enumerate(ion_list):
+        for k, ligand in enumerate(ligand_list):
             loss_func = torch.nn.BCEWithLogitsLoss(
                 pos_weight=torch.sqrt(torch.tensor(pos_weights[k]))
             )
-            logging.info("Training for {}".format(ion))
-            model.ion_type = ion
+            logging.info("Training for {}".format(ligand))
+            model.ligand = ligand
             model.train()
             train_loss = 0.0
             all_outputs, all_labels = [], []
@@ -149,7 +146,7 @@ def main(conf):
                 )
             )
             writer.add_scalars(
-                "train_{}".format(ion),
+                "train_{}".format(ligand),
                 {
                     "loss": train_loss / (i + 1),
                     "auc": train_auc,
@@ -187,7 +184,7 @@ def main(conf):
                     )
                 )
                 writer.add_scalars(
-                    "val_{}".format(ion),
+                    "val_{}".format(ligand),
                     {
                         "auc": val_auc,
                         "auprc": val_auprc,
