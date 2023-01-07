@@ -3,7 +3,7 @@
         {
          "seed": 1, 
          "gpu_id": 1, 
-         "debug": 1
+         "debug": 0
         },
     "data":
         {
@@ -16,13 +16,15 @@
         "save_feature": 0
         },
     "model": {
-        "name": "MultiModal",
+        "name": "base",
         "feature_dim_1": 2560,
-        "feature_dim_2": 1000,
-        "hidden_dim": 64,
+        "feature_dim_2": 384,
+        "hidden_dim": 512,
+        "hidden_dim_1": 256,
+        "hidden_dim_2": 256,
         "num_encoder_layers": 2,
         "num_heads": 4,
-        "augment_eps": 0.1,
+        "augment_eps": 0.05,
         "dropout": 0.3,
         "attn_mask": 1,
         "ligand": "CA",
@@ -35,7 +37,7 @@
          "val_ratio": 0.25,
          "feature_batch_size": 4,
          "batch_size": 64,
-         "epochs": 15,
+         "epochs": 25,
          "weight_decay": 2e-2
         }
 }

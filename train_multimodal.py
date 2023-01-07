@@ -11,12 +11,13 @@ from torchmetrics.classification import (
     BinaryAveragePrecision,
 )
 from pathlib import Path
+from torch.utils.tensorboard import SummaryWriter
 from script.utils import (
     logging_related,
     parse_arguments,
 )
 from data.data_process import prep_dataset, prep_dataloader
-from model.model import LMetalSiteMultiModal
+from model.model import LMetalSiteMultiModal, LMetalSiteMultiModalBase
 
 
 def main(conf):
@@ -31,16 +32,14 @@ def main(conf):
     logging.info(
         "Training begins at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
     )
-    if conf.model.name == "Evoformer":
-        conf.model.feature_dim = 384
-    elif conf.model.name == "ProtTrans":
-        conf.model.feature_dim = 1024
-    elif conf.model.name == "Composite":
-        conf.model.feature_dim = 1408
-    elif conf.model.name == "MultiModal":
-        conf.model.feature_dim = 1
+    conf.model.feature_dim = 1
     # Load LMetalSite model
-    model = LMetalSiteMultiModal(conf.model).to(device)
+    if conf.model.name == "base":
+        model = LMetalSiteMultiModalBase(conf.model).to(device)
+    elif conf.model.name == "cross_attention":
+        model = LMetalSiteMultiModal(conf.model).to(device)
+    else:
+        raise NotImplementedError("Invalid model name")
 
     if conf.training.optimizer == "Adam":
         optimizer = torch.optim.Adam(
@@ -57,22 +56,30 @@ def main(conf):
         )
     metric_auc = BinaryAUROC(thresholds=None)
     metric_auprc = BinaryAveragePrecision(thresholds=None)
-    log_interval = 2 * conf.training.batch_size
     model.training = True  # adding Gaussian noise to embedding
-    for ligand in ["ZN", "MN", "MG", "CA"]:
+    ligand_list = ["DNA", "RNA", "MG", "CA", "MN", "ZN"]
+    pos_weights = []
+    dataloader_train, dataloader_val = [], []
+    for ligand in ligand_list:
         dataset, pos_weight = prep_dataset(conf, device, ligand=ligand)
         train_dataloader, val_dataloader = prep_dataloader(
             dataset, conf, random_seed=RANDOM_SEED, ligand=ligand
         )
-        loss_func = torch.nn.BCEWithLogitsLoss(
-            pos_weight=torch.sqrt(torch.tensor(pos_weight))
-        )
-        # loss_func = torch.nn.BCEWithLogitsLoss()
-        model.ligand = ligand
-        for epoch in range(conf.training.epochs):
+        dataloader_train.append(train_dataloader)
+        dataloader_val.append(val_dataloader)
+        pos_weights.append(pos_weight)
+
+    for epoch in range(conf.training.epochs):
+        for k, ligand in enumerate(ligand_list):
+            loss_func = torch.nn.BCEWithLogitsLoss(
+                pos_weight=torch.sqrt(torch.tensor(pos_weights[k]))
+            )
+            logging.info("Training for {}".format(ligand))
+            model.ligand = ligand
+            model.train()
             train_loss = 0.0
             all_outputs, all_labels = [], []
-            for i, batch_data in tqdm(enumerate(train_dataloader)):
+            for i, batch_data in tqdm(enumerate(dataloader_train[k])):
                 feats_1, feats_2, labels, masks = batch_data
                 optimizer.zero_grad(set_to_none=True)
                 feats_1 = feats_1.to(device)
@@ -87,20 +94,12 @@ def main(conf):
                 outputs = torch.sigmoid(torch.masked_select(outputs, masks.bool()))
                 all_outputs.append(outputs)
                 all_labels.append(labels)
-                running_auc = metric_auc(outputs, labels)
-                running_auprc = metric_auprc(outputs, labels)
-                running_loss = loss_.detach().cpu().numpy()
-                train_loss += running_loss
-                if i % log_interval == 0 and i > 0:
-                    logging.info(
-                        "Running train loss: {:.4f}, auc: {:.3f}, auprc: {:.3f}".format(
-                            running_loss, running_auc, running_auprc
-                        )
-                    )
-            all_outputs = torch.cat(all_outputs)
-            all_labels = torch.cat(all_labels)
-            train_auc = metric_auc(all_outputs, all_labels).detach().cpu().numpy()
-            train_auprc = metric_auprc(all_outputs, all_labels).detach().cpu().numpy()
+                train_loss += loss_.detach().cpu().numpy()
+
+            all_outputs = torch.cat(all_outputs).detach().cpu()
+            all_labels = torch.cat(all_labels).detach().cpu()
+            train_auc = metric_auc(all_outputs, all_labels)
+            train_auprc = metric_auprc(all_outputs, all_labels)
             logging.info(
                 "Epoch {} train loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
                     epoch + 1,
@@ -109,12 +108,21 @@ def main(conf):
                     train_auprc,
                 )
             )
+            writer.add_scalars(
+                "train_{}".format(ligand),
+                {
+                    "loss": train_loss / (i + 1),
+                    "auc": train_auc,
+                    "auprc": train_auprc,
+                },
+                epoch + 1,
+            )
             model.eval()
             with torch.no_grad():
                 model.training = False
                 val_loss = 0.0
                 all_outputs, all_labels = [], []
-                for i, batch_data in tqdm(enumerate(val_dataloader)):
+                for i, batch_data in tqdm(enumerate(dataloader_val[k])):
                     feats_1, feats_2, labels, masks = batch_data
                     feats_1 = feats_1.to(device)
                     feats_2 = feats_2.to(device)
@@ -127,18 +135,26 @@ def main(conf):
                     all_labels.append(labels)
                     val_loss += loss_.detach().cpu().numpy()
 
-            all_outputs = torch.cat(all_outputs)
-            all_labels = torch.cat(all_labels)
-            val_auc = metric_auc(all_outputs, all_labels).detach().cpu().numpy()
-            val_auprc = metric_auprc(all_outputs, all_labels).detach().cpu().numpy()
-            logging.info(
-                "Epoch {} val loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
-                    epoch + 1,
-                    val_loss / (i + 1),
-                    val_auc,
-                    val_auprc,
+                all_outputs = torch.cat(all_outputs).detach().cpu()
+                all_labels = torch.cat(all_labels).detach().cpu()
+                val_auc = metric_auc(all_outputs, all_labels)
+                val_auprc = metric_auprc(all_outputs, all_labels)
+                logging.info(
+                    "Epoch {} val loss {:.4f}, auc {:.3f}, auprc: {:.3f}".format(
+                        epoch + 1,
+                        val_loss / (i + 1),
+                        val_auc,
+                        val_auprc,
+                    )
                 )
-            )
+                writer.add_scalars(
+                    "val_{}".format(ligand),
+                    {
+                        "auc": val_auc,
+                        "auprc": val_auprc,
+                    },
+                    epoch + 1,
+                )
 
     logging.info(
         "Training is done at {}".format(datetime.datetime.now().strftime("%m-%d %H:%M"))
@@ -151,12 +167,13 @@ if __name__ == "__main__":
     args = parse_arguments(parser)
     with open(args.config, "r") as f:
         conf = json.load(f)
-    conf = config_dict.ConfigDict(conf)
+
     output_path = None
-    if not conf.general.debug:
+    if not conf["general"]["debug"]:
         output_path = (
             Path("./results/")
             / Path(args.config).stem
+            / Path(conf["data"]["feature"] + "_" + conf["model"]["name"])
             / Path(
                 str(datetime.datetime.now())[:16].replace(" ", "-").replace(":", "-")
             )
@@ -166,11 +183,13 @@ if __name__ == "__main__":
         with open(str(output_path) + "/config.json", "w") as f:
             json.dump(conf, f, indent=4)
 
+    conf = config_dict.ConfigDict(conf)
     """
     logging related part
     """
     logging_related(output_path=output_path, debug=conf.general.debug)
+    writer = SummaryWriter(log_dir=output_path)
     main(conf)
-
+    writer.flush()
     end = timer()
     logging.info("Total time used: {:.1f}".format(end - start))

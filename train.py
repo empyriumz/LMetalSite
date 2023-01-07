@@ -19,8 +19,6 @@ from script.utils import (
 from data.data_process import prep_dataset, prep_dataloader
 from model.model import LMetalSite, LMetalSiteBase, LMetalSiteTwoLayer, LMetalSiteLSTM
 
-LOG_INTERVAL = 50
-
 
 def main(conf):
     RANDOM_SEED = int(conf.general.seed)
@@ -43,7 +41,7 @@ def main(conf):
     elif conf.data.feature == "Composite_ESM":
         conf.model.feature_dim = 2944
     elif conf.data.feature == "ESM":
-        conf.model.feature_dim = 2560
+        conf.model.feature_dim = 5120  # 2560
     else:
         raise ValueError("No feature available")
 
@@ -95,7 +93,7 @@ def main(conf):
     metric_auprc = BinaryAveragePrecision(thresholds=None)
     model.training = True  # adding Gaussian noise to embedding
     ligand_list = ["DNA", "RNA", "MG", "CA", "MN", "ZN"]
-    # ligand_list = ["MG", "CA", "MN", "ZN"]
+    # ligand_list = ["DNA", "MG", "CA", "MN", "ZN"]
     pos_weights = []
     dataloader_train, dataloader_val = [], []
     for ligand in ligand_list:

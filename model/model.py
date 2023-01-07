@@ -250,6 +250,46 @@ class LMetalSite(LMetalSiteBase):
         return logits
 
 
+class LMetalSiteMultiModalBase(LMetalSiteBase):
+    def __init__(self, conf, training=True):
+        super(LMetalSiteMultiModalBase, self).__init__(conf, training=training)
+        self.feature_dim_1 = conf.feature_dim_1
+        self.feature_dim_2 = conf.feature_dim_2
+        self.hidden_dim_1 = conf.hidden_dim_1
+        self.hidden_dim_2 = conf.hidden_dim_2
+        modules = [
+            nn.LayerNorm(self.feature_dim_1, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(self.feature_dim_1, self.hidden_dim_1),
+            nn.LeakyReLU(),
+        ]
+        self.input_block_1 = nn.Sequential(*modules)
+        modules = [
+            nn.LayerNorm(self.feature_dim_2, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(self.feature_dim_2, self.hidden_dim_2),
+            nn.LeakyReLU(),
+        ]
+        self.input_block_2 = nn.Sequential(*modules)
+        modules = [
+            nn.LayerNorm(self.hidden_dim_2 + self.hidden_dim_1, eps=1e-6),
+            nn.Dropout(conf.dropout),
+            nn.Linear(self.hidden_dim_2 + self.hidden_dim_1, self.hidden_dim),
+            nn.LeakyReLU(),
+        ]
+        self.input_block_3 = nn.Sequential(*modules)
+
+    def forward(self, feat_a, feat_b):
+        feat_a = self.add_noise(feat_a)
+        feat_b = self.add_noise(feat_b)
+        output_1 = self.input_block_1(feat_a)
+        output_2 = self.input_block_2(feat_b)
+        output = self.input_block_3(torch.cat((output_1, output_2), dim=-1))
+        logits = self.get_logits(output)
+
+        return logits
+
+
 class LMetalSiteMultiModal(LMetalSiteBase):
     def __init__(self, conf, training=True):
         super(LMetalSiteMultiModal, self).__init__(conf, training=training)

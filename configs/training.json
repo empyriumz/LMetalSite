@@ -6,7 +6,7 @@
     },
     "data": {
         "data_path": "datasets",
-        "feature": "ESM",
+        "feature": "Composite",
         "data_type": "original",
         "max_seq_len": 2000,
         "precomputed_feature": "precomputed_embedding",
@@ -33,7 +33,7 @@
         "val_ratio": 0.25,
         "feature_batch_size": 4,
         "batch_size": 64,
-        "epochs": 30,
+        "epochs": 25,
         "weight_decay": 0.03
     }
 }

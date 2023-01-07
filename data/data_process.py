@@ -13,6 +13,7 @@ from .embeddings import (
     composite_embedding_esm,
     esm_embedding,
     multimodal_embedding,
+    multimodal_embedding_esm,
 )
 
 
@@ -116,7 +117,7 @@ def feature_extraction(
             ligand=ligand,
         )
     elif feature_name == "MultiModal":
-        protein_features = multimodal_embedding(
+        protein_features = multimodal_embedding_esm(
             ID_list,
             conf.data.precomputed_feature,
             normalize=conf.data.normalize,

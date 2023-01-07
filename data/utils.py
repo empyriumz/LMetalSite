@@ -12,6 +12,8 @@ def load_esm_model(backend_name):
         backbone_model, alphabet = pretrained.esm2_t33_650M_UR50D()
     elif backend_name == "esm_large":  # embed_dim=2560
         backbone_model, alphabet = pretrained.esm2_t36_3B_UR50D()
+    elif backend_name == "esm_huge":  # embed_dim=2560
+        backbone_model, alphabet = pretrained.esm2_t48_15B_UR50D()
     elif backend_name == "esm_1b":  # embed_dim=1280
         backbone_model, alphabet = pretrained.esm1b_t33_650M_UR50S()
         backbone_model.embed_dim = 1280
