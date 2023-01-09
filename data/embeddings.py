@@ -347,13 +347,20 @@ def multimodal_embedding_esm(
         )
 
         if ligand == "DNA" or ligand == "RNA":
+            # feature_esm = np.load(
+            #     precomputed_feature_path + "/esm_huge_nucleic_acids/{}.npy".format(id)
+            # )
             feature_esm = np.load(
-                precomputed_feature_path + "/esm_huge_nucleic_acids/{}.npy".format(id)
+                precomputed_feature_path + "/{}_esm/{}.npy".format(ligand, id)
             )
         else:
+            # feature_esm = np.load(
+            #     precomputed_feature_path + "/esm_huge/{}.npy".format(id)
+            # )
             feature_esm = np.load(
-                precomputed_feature_path + "/esm_huge/{}.npy".format(id)
+                precomputed_feature_path + "/{}_esm/{}.npz".format(ligand, id)
             )
+            feature_esm = feature_esm["embedding"]
         if normalize:
             feature_esm = (feature_esm - min_repr_esm) / (max_repr_esm - min_repr_esm)
             feature_evo = (feature_evo["single"] - min_repr_evo) / (
