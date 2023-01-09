@@ -19,8 +19,8 @@ mean_repr_prot = np.load("script/ProtTrans_repr_mean.npy")
 std_repr_prot = np.load("script/ProtTrans_repr_std.npy")
 max_repr_esm = np.load("script/ESM_repr_max.npy")
 min_repr_esm = np.load("script/ESM_repr_min.npy")
-# max_repr_esm = np.load("script/ESM_huge_repr_max.npy")
-# min_repr_esm = np.load("script/ESM_huge_repr_min.npy")
+# max_repr_esm = np.load("script/ESM_huge_max.npy")
+# min_repr_esm = np.load("script/ESM_huge_min.npy")
 
 
 def esm_embedding(ID_list, seq_list, conf, device, normalize=True, ligand="ZN"):
@@ -348,13 +348,12 @@ def multimodal_embedding_esm(
 
         if ligand == "DNA" or ligand == "RNA":
             feature_esm = np.load(
-                precomputed_feature_path + "/{}_esm/{}.npy".format(ligand, id)
+                precomputed_feature_path + "/esm_huge_nucleic_acids/{}.npy".format(id)
             )
         else:
-            tmp = np.load(
-                precomputed_feature_path + "/{}_esm/{}.npz".format(ligand, id)
+            feature_esm = np.load(
+                precomputed_feature_path + "/esm_huge/{}.npy".format(id)
             )
-            feature_esm = tmp["embedding"]
         if normalize:
             feature_esm = (feature_esm - min_repr_esm) / (max_repr_esm - min_repr_esm)
             feature_evo = (feature_evo["single"] - min_repr_evo) / (
@@ -362,6 +361,42 @@ def multimodal_embedding_esm(
             )
 
         protein_features[id] = [feature_esm, feature_evo]
+
+    return protein_features
+
+
+def multimodal_embedding_esm_prot(
+    ID_list, precomputed_feature_path, normalize=True, ligand="ZN"
+):
+    protein_features = {}
+    for id in ID_list:
+        feature_prot = np.load(
+            precomputed_feature_path + "/{}_ProtTrans/{}.npy".format(ligand, id)
+        )
+
+        if ligand == "DNA" or ligand == "RNA":
+            # feature_esm = np.load(
+            #     precomputed_feature_path + "/esm_huge_nucleic_acids/{}.npy".format(id)
+            # )
+            feature_esm = np.load(
+                precomputed_feature_path + "/{}_esm/{}.npy".format(ligand, id)
+            )
+
+        else:
+            # feature_esm = np.load(
+            #     precomputed_feature_path + "/esm_huge/{}.npy".format(id)
+            # )
+            feature_esm = np.load(
+                precomputed_feature_path + "/{}_esm/{}.npz".format(ligand, id)
+            )
+            feature_esm = feature_esm["embedding"]
+        if normalize:
+            feature_esm = (feature_esm - min_repr_esm) / (max_repr_esm - min_repr_esm)
+            feature_prot = (feature_prot - min_repr_prot) / (
+                max_repr_prot - min_repr_prot
+            )
+
+        protein_features[id] = [feature_esm, feature_prot]
 
     return protein_features
 

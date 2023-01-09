@@ -1,43 +1,42 @@
 {
-    "general": 
-        {
-         "seed": 1, 
-         "gpu_id": 1, 
-         "debug": 0
-        },
-    "data":
-        {
+    "general": {
+        "seed": 1,
+        "gpu_id": 2,
+        "debug": 0
+    },
+    "data": {
         "data_path": "datasets",
-        "feature": "MultiModal",
+        "feature": "ESM_ProtTrans",
         "data_type": "multi_modal",
         "max_seq_len": 2000,
         "precomputed_feature": "precomputed_embedding",
         "normalize": 1,
         "save_feature": 0
-        },
+    },
     "model": {
         "name": "base",
         "feature_dim_1": 2560,
-        "feature_dim_2": 384,
+        "feature_dim_2": 1024,
         "hidden_dim": 512,
         "hidden_dim_1": 256,
         "hidden_dim_2": 256,
         "num_encoder_layers": 2,
         "num_heads": 4,
-        "augment_eps": 0.05,
+        "augment_eps": 0.1,
         "dropout": 0.3,
         "attn_mask": 1,
         "ligand": "CA",
         "fix_encoder": 0
     },
-    "training": 
-        {
+    "training": {
         "optimizer": "AdamW",
-         "learning_rate": 5e-4,
-         "val_ratio": 0.25,
-         "feature_batch_size": 4,
-         "batch_size": 64,
-         "epochs": 25,
-         "weight_decay": 2e-2
-        }
+        "pretrained_encoder": 0,
+        "encoder_learning_rate": 0.0004,
+        "learning_rate": 0.0004,
+        "val_ratio": 0.25,
+        "feature_batch_size": 4,
+        "batch_size": 64,
+        "epochs": 30,
+        "weight_decay": 0.03
+    }
 }

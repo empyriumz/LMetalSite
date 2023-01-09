@@ -14,6 +14,7 @@ from .embeddings import (
     esm_embedding,
     multimodal_embedding,
     multimodal_embedding_esm,
+    multimodal_embedding_esm_prot,
 )
 
 
@@ -68,11 +69,13 @@ def feature_extraction(
 ):
     assert feature_name in [
         "Evoformer",
-        "Composite",
-        "Composite_ESM",
-        "MultiModal",
         "ProtTrans",
         "ESM",
+        "Composite",
+        "Composite_ESM",
+        "ESM_Evoformer",
+        "ProtTrans_Evoformer",
+        "ESM_ProtTrans",
     ], "Invalid feature name"
     if feature_name == "Evoformer":
         assert (
@@ -116,8 +119,22 @@ def feature_extraction(
             normalize=conf.data.normalize,
             ligand=ligand,
         )
-    elif feature_name == "MultiModal":
+    elif feature_name == "ESM_Evoformer":
         protein_features = multimodal_embedding_esm(
+            ID_list,
+            conf.data.precomputed_feature,
+            normalize=conf.data.normalize,
+            ligand=ligand,
+        )
+    elif feature_name == "ProtTrans_Evoformer":
+        protein_features = multimodal_embedding(
+            ID_list,
+            conf.data.precomputed_feature,
+            normalize=conf.data.normalize,
+            ligand=ligand,
+        )
+    elif feature_name == "ESM_ProtTrans":
+        protein_features = multimodal_embedding_esm_prot(
             ID_list,
             conf.data.precomputed_feature,
             normalize=conf.data.normalize,

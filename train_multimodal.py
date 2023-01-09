@@ -40,17 +40,33 @@ def main(conf):
         model = LMetalSiteMultiModal(conf.model).to(device)
     else:
         raise NotImplementedError("Invalid model name")
+    if conf.training.pretrained_encoder:
+        checkpoint = torch.load(conf.training.pretrained_encoder)
+        logging.info("load encoder from {}".format(conf.training.pretrained_encoder))
+        model.params.encoder.load_state_dict(checkpoint["encoder_state"])
 
     if conf.training.optimizer == "Adam":
         optimizer = torch.optim.Adam(
-            model.parameters(),
+            [
+                {"params": model.params.classifier.parameters()},
+                {
+                    "params": model.params.encoder.parameters(),
+                    "lr": conf.training.encoder_learning_rate,
+                },
+            ],
             betas=(0.9, 0.99),
             lr=conf.training.learning_rate,
             weight_decay=conf.training.weight_decay,
         )
     else:
         optimizer = torch.optim.AdamW(
-            model.parameters(),
+            [
+                {"params": model.params.classifier.parameters()},
+                {
+                    "params": model.params.encoder.parameters(),
+                    "lr": conf.training.encoder_learning_rate,
+                },
+            ],
             lr=conf.training.learning_rate,
             weight_decay=conf.training.weight_decay,
         )
@@ -58,6 +74,7 @@ def main(conf):
     metric_auprc = BinaryAveragePrecision(thresholds=None)
     model.training = True  # adding Gaussian noise to embedding
     ligand_list = ["DNA", "RNA", "MG", "CA", "MN", "ZN"]
+    # ligand_list = ["MG", "CA", "MN", "ZN"]
     pos_weights = []
     dataloader_train, dataloader_val = [], []
     for ligand in ligand_list:

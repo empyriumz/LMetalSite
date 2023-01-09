@@ -128,7 +128,14 @@ class LMetalSiteBase(nn.Module):
             {
                 "encoder": self.input_block,
                 "classifier": nn.ModuleList(
-                    [self.MN_head, self.MG_head, self.CA_head, self.ZN_head]
+                    [
+                        self.RNA_head,
+                        self.DNA_head,
+                        self.MN_head,
+                        self.MG_head,
+                        self.CA_head,
+                        self.ZN_head,
+                    ]
                 ),
             }
         )
@@ -278,6 +285,23 @@ class LMetalSiteMultiModalBase(LMetalSiteBase):
             nn.LeakyReLU(),
         ]
         self.input_block_3 = nn.Sequential(*modules)
+        self.params = nn.ModuleDict(
+            {
+                "encoder": nn.ModuleList(
+                    [self.input_block_1, self.input_block_2, self.input_block_3]
+                ),
+                "classifier": nn.ModuleList(
+                    [
+                        self.RNA_head,
+                        self.DNA_head,
+                        self.MN_head,
+                        self.MG_head,
+                        self.CA_head,
+                        self.ZN_head,
+                    ]
+                ),
+            }
+        )
 
     def forward(self, feat_a, feat_b):
         feat_a = self.add_noise(feat_a)
