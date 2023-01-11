@@ -18,10 +18,10 @@ from script.utils import (
 )
 from data.data_process import prep_dataset_
 from model.model import LMetalSiteMultiModal, LMetalSiteMultiModalBase
-from libauc.optimizers import SOAP
+from libauc.optimizers import SOAP, PESG
 from torchvision.ops import sigmoid_focal_loss
 from model.loss_ import APLoss
-
+from libauc.losses import AUCMLoss
 # from model.sampler import ImbalancedDatasetSampler
 from torch.utils.data import DataLoader
 from libauc.sampler import DualSampler
@@ -64,18 +64,28 @@ def main(conf):
         weight_decay=conf.training.weight_decay_adamw,
     )
 
-    optimizer_2 = SOAP(
-        [
-            {"params": model.params.classifier.parameters()},
-            {
-                "params": model.params.encoder.parameters(),
-                "lr": conf.training.encoder_learning_rate,
-            },
-        ],
-        mode="adam",
-        lr=conf.training.learning_rate,
-        weight_decay=conf.training.weight_decay_auprc,
-    )
+    # optimizer_2 = SOAP(
+    #     [
+    #         {"params": model.params.classifier.parameters()},
+    #         {
+    #             "params": model.params.encoder.parameters(),
+    #             "lr": conf.training.encoder_learning_rate,
+    #         },
+    #     ],
+    #     mode="adam",
+    #     lr=conf.training.learning_rate,
+    #     weight_decay=conf.training.weight_decay_auprc,
+    # )
+    loss_fn = AUCMLoss(device=device)
+    optimizer_2 = PESG(model, 
+                 loss_fn=loss_fn,
+                 lr=conf.training.learning_rate, 
+                 momentum=0.9,
+                 margin=conf.training.margin, 
+                 epoch_decay=3e-3, 
+                 device=device,
+                 weight_decay=conf.training.weight_decay_auprc)
+     
     metric_auc = BinaryAUROC(thresholds=None)
     metric_auprc = BinaryAveragePrecision(thresholds=None)
     model.training = True  # adding Gaussian noise to embedding
@@ -109,12 +119,13 @@ def main(conf):
                 sampler = DualSampler(
                     train_datasets[k], conf.training.batch_size, sampling_rate=0.5
                 )
-                loss_func = APLoss(
-                    pos_len=sampler.pos_len,
-                    margin=conf.training.margin,
-                    gamma=conf.training.gamma,
-                    device=device,
-                )
+                # loss_func = APLoss(
+                #     pos_len=sampler.pos_len,
+                #     margin=conf.training.margin,
+                #     gamma=conf.training.gamma,
+                #     device=device,
+                # )
+                loss_fn = AUCMLoss(device=device)
                 dataloader_train = DataLoader(
                     train_datasets[k],
                     batch_size=conf.training.batch_size,
@@ -143,7 +154,8 @@ def main(conf):
             for i, batch_data in tqdm(enumerate(dataloader_train)):
                 index, feats_1, feats_2, labels = batch_data
                 optimizer_1.zero_grad(set_to_none=True)
-                optimizer_2.zero_grad(set_to_none=True)
+                # optimizer_2.zero_grad(set_to_none=True)
+                optimizer_2.zero_grad()
                 feats_1 = feats_1.to(device)
                 feats_2 = feats_2.to(device)
                 labels = labels.to(device)
@@ -156,7 +168,8 @@ def main(conf):
                     loss_.backward()
                     optimizer_1.step()
                 else:
-                    loss_ = loss_func(outputs, labels, index)
+                    # loss_ = loss_func(outputs, labels, index)
+                    loss_ = loss_func(outputs, labels)
                     loss_.backward()
                     optimizer_2.step()
                 all_outputs.append(torch.sigmoid(outputs))
