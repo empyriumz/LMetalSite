@@ -43,8 +43,8 @@ class MetalDatasetTest(Dataset):
 
 
 class MetalDataset(Dataset):
-    def __init__(self, ID_list, seq_list, label_list, protein_features):
-        pred_dict = {"ID": ID_list, "Sequence": seq_list, "Label": label_list}
+    def __init__(self, ID_list, label_list, protein_features):
+        pred_dict = {"ID": ID_list, "Label": label_list}
         self.df = pd.DataFrame(pred_dict)
         self.protein_features = protein_features
         self.feature_dim = protein_features[ID_list[0]].shape[1]
@@ -55,7 +55,7 @@ class MetalDataset(Dataset):
     def __getitem__(self, idx):
         data = self.df.loc[idx]
         protein_feat = self.protein_features[data["ID"]]
-        protein_label = [int(label) for label in data["Label"]]
+        protein_label = data["Label"]
         return protein_feat, protein_label
 
     def padding(self, batch, maxlen):
@@ -92,8 +92,8 @@ class MetalDataset(Dataset):
 
 
 class UniRefDataset(Dataset):
-    def __init__(self, ID_list, seq_list, protein_features):
-        pred_dict = {"ID": ID_list, "Sequence": seq_list}
+    def __init__(self, ID_list, protein_features):
+        pred_dict = {"ID": ID_list}
         self.df = pd.DataFrame(pred_dict)
         self.protein_features = protein_features
         self.feature_dim = protein_features[ID_list[0]].shape[1]
@@ -133,61 +133,85 @@ class UniRefDataset(Dataset):
 
 
 class MultiModalDataset(Dataset):
-    def __init__(self, ID_list, seq_list, label_list, protein_features):
-        pred_dict = {"ID": ID_list, "Sequence": seq_list, "Label": label_list}
-        self.df = pd.DataFrame(pred_dict)
-        self.protein_features = protein_features
-        self.feature_dim_1 = protein_features[ID_list[0]][0].shape[1]
-        self.feature_dim_2 = protein_features[ID_list[0]][1].shape[1]
+    def __init__(self, ID_list, label_data, protein_features, mode=None):
+        # pred_dict = {"ID": ID_list, "Label": label_list}
+        # self.df = pd.DataFrame(pred_dict)
+        # self.protein_features = protein_features
+        # self.feature_dim_1 = protein_features[ID_list[0]][0].shape[1]
+        # self.feature_dim_2 = protein_features[ID_list[0]][1].shape[1]
+        self.mode = mode
+        feat_1 = []
+        feat_2 = []
+        label_list = []
+        for id in ID_list:
+            feat_1.append(protein_features[id][0])
+            feat_2.append(protein_features[id][1])
+            label_list.append(label_data[id])
+        self.targets = np.concatenate(label_list, dtype=np.float32)
+        self.feat_1 = np.concatenate(feat_1)
+        self.feat_2 = np.concatenate(feat_2)
+        # for loss function
+        self.pos_indices = np.flatnonzero(self.targets == 1)
+        self.pos_index_map = {}
+        for i, idx in enumerate(self.pos_indices):
+            self.pos_index_map[idx] = i
 
     def __len__(self):
-        return self.df.shape[0]
+        # return self.df.shape[0]
+        return len(self.targets)
 
     def __getitem__(self, idx):
-        data = self.df.loc[idx]
-        protein_feat = self.protein_features[data["ID"]]
-        feat_1, feat_2 = protein_feat[0], protein_feat[1]
-        protein_label = [int(label) for label in data["Label"]]
-        return feat_1, feat_2, protein_label
+        # data = self.df.loc[idx]
+        # protein_feat = self.protein_features[data["ID"]]
+        # feat_1, feat_2 = protein_feat[0], protein_feat[1]
+        # protein_label = data["Label"]
+        feat_1 = self.feat_1[idx]
+        feat_2 = self.feat_2[idx]
+        target = self.targets[idx]
+        if self.mode == "train":
+            pos_idx = self.pos_index_map[idx] if idx in self.pos_indices else -1
+        else:
+            pos_idx = idx
+        return pos_idx, feat_1, feat_2, target
 
-    def padding(self, batch, maxlen):
-        batch_feat_1 = []
-        batch_feat_2 = []
-        batch_protein_label = []
-        batch_protein_mask = []
-        for feat_1, feat_2, protein_label in batch:
-            padded_feat_1 = np.zeros((maxlen, self.feature_dim_1))
-            padded_feat_1[: feat_1.shape[0]] = feat_1
-            padded_feat_1 = torch.tensor(padded_feat_1, dtype=torch.float)
-            batch_feat_1.append(padded_feat_1)
+    # def padding(self, batch, maxlen):
+    #     batch_feat_1 = []
+    #     batch_feat_2 = []
+    #     batch_protein_label = []
+    #     batch_protein_mask = []
+    #     for feat_1, feat_2, protein_label in batch:
+    #         padded_feat_1 = np.zeros((maxlen, self.feature_dim_1))
+    #         padded_feat_1[: feat_1.shape[0]] = feat_1
+    #         padded_feat_1 = torch.tensor(padded_feat_1, dtype=torch.float)
+    #         batch_feat_1.append(padded_feat_1)
 
-            padded_feat_2 = np.zeros((maxlen, self.feature_dim_2))
-            padded_feat_2[: feat_2.shape[0]] = feat_2
-            padded_feat_2 = torch.tensor(padded_feat_2, dtype=torch.float)
-            batch_feat_2.append(padded_feat_2)
+    #         padded_feat_2 = np.zeros((maxlen, self.feature_dim_2))
+    #         padded_feat_2[: feat_2.shape[0]] = feat_2
+    #         padded_feat_2 = torch.tensor(padded_feat_2, dtype=torch.float)
+    #         batch_feat_2.append(padded_feat_2)
 
-            protein_mask = np.zeros(maxlen)
-            protein_mask[: feat_1.shape[0]] = 1
-            protein_mask = torch.tensor(protein_mask, dtype=torch.long)
-            batch_protein_mask.append(protein_mask)
+    #         protein_mask = np.zeros(maxlen)
+    #         protein_mask[: feat_1.shape[0]] = 1
+    #         protein_mask = torch.tensor(protein_mask, dtype=torch.long)
+    #         batch_protein_mask.append(protein_mask)
 
-            padded_label = np.zeros(maxlen)
-            padded_label[: feat_1.shape[0]] = protein_label
-            padded_label = torch.tensor(padded_label, dtype=torch.float)
-            batch_protein_label.append(padded_label)
+    #         padded_label = np.zeros(maxlen)
+    #         padded_label[: feat_1.shape[0]] = protein_label
+    #         padded_label = torch.tensor(padded_label, dtype=torch.float)
+    #         batch_protein_label.append(padded_label)
 
-        return (
-            torch.stack(batch_feat_1),
-            torch.stack(batch_feat_2),
-            torch.stack(batch_protein_label),
-            torch.stack(batch_protein_mask),
-        )
+    #     return (
+    #         torch.stack(batch_feat_1),
+    #         torch.stack(batch_feat_2),
+    #         torch.stack(batch_protein_label),
+    #         torch.stack(batch_protein_mask),
+    #     )
 
-    def collate_fn(self, batch):
-        maxlen = max([len(protein_label) for _, _, protein_label in batch])
-        feat_1, feat_2, protein_label, protein_mask = self.padding(batch, maxlen)
+    # def collate_fn(self, batch):
+    #     maxlen = max([len(protein_label) for _, _, protein_label in batch])
+    #     feat_1, feat_2, protein_label, protein_mask = self.padding(batch, maxlen)
 
-        return feat_1, feat_2, protein_label, protein_mask
+    #     return feat_1, feat_2, protein_label, protein_mask
 
 
 class FineTuneDataset(Dataset):

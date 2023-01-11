@@ -16,6 +16,11 @@ from .embeddings import (
     multimodal_embedding_esm,
     multimodal_embedding_esm_prot,
 )
+import numpy as np
+from libauc.sampler import DualSampler
+
+# from torchsampler import ImbalancedDatasetSampler
+# from ..model.sampler import ImbalancedDatasetSampler
 
 
 def process_fasta(fasta_file, max_input_seq_num=5000):
@@ -34,7 +39,7 @@ def process_fasta(fasta_file, max_input_seq_num=5000):
         elif line[0] in string.ascii_letters:
             seq_list.append(line.strip().upper())
         elif line[0] in string.digits:
-            label_list.append(line.strip())
+            label_list.append([int(i) for i in line.strip()])
 
     if len(ID_list) == len(seq_list):
         if len(ID_list) > max_input_seq_num:
@@ -165,14 +170,14 @@ def prep_dataset(conf, device, ligand=None, tokenizer=None):
         feature_name=conf.data.feature,
     )
     if conf.data.data_type == "original":
-        dataset = MetalDataset(ID_list, seq_list, label_list, protein_features)
+        dataset = MetalDataset(ID_list, label_list, protein_features)
     elif conf.data.data_type == "finetune":
         assert tokenizer is not None, "Invalid tokenizer"
         dataset = FineTuneDataset(ID_list, seq_list, label_list, tokenizer)
     elif conf.data.data_type == "multi_modal":
-        dataset = MultiModalDataset(ID_list, seq_list, label_list, protein_features)
+        dataset = MultiModalDataset(ID_list, label_list, protein_features)
     elif conf.data.data_type == "uniref":
-        dataset = UniRefDataset(ID_list, seq_list, protein_features)
+        dataset = UniRefDataset(ID_list, protein_features)
 
     return dataset, pos_weight
 
@@ -188,6 +193,11 @@ def prep_dataloader(dataset, conf, random_seed=0, ligand="ZN"):
             ligand, len(train_dataset), len(val_dataset)
         )
     )
+    sampler = DualSampler(
+        train_dataset,
+        batch_size=conf.training.batch_size,
+        sampling_rate=0.5,
+    )
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=conf.training.batch_size,
@@ -196,6 +206,8 @@ def prep_dataloader(dataset, conf, random_seed=0, ligand="ZN"):
         drop_last=False,
         pin_memory=True,
         num_workers=0,
+        sampler=ImbalancedDatasetSampler(train_dataset),
+        # sampler=sampler,
     )
     val_dataloader = DataLoader(
         val_dataset,
@@ -245,3 +257,46 @@ def finetune_data_loader(conf, tokenizer, random_seed=0, ligand="ZN"):
     )
 
     return train_dataloader, val_dataloader, pos_weight
+
+
+def prep_dataset_(conf, device, random_seed=0, ligand=None, tokenizer=None):
+    assert conf.data.data_type in ["original", "finetune", "multi_modal", "uniref"]
+    pos_weight = None
+    if conf.data.data_type != "uniref":
+        fasta_path = conf.data.data_path + "/{}_train.fa".format(ligand)
+
+    if conf.data.data_type == "uniref":
+        ID_list, seq_list = process_fasta_biopython(conf.data.fasta_path)
+    else:
+        ID_list, seq_list, label_list = process_fasta(fasta_path, conf.data.max_seq_len)
+        pos_weight = calculate_pos_weight(label_list)
+    # label_data = {z[0]: list(z[1:]) for z in zip(ID_list, label_list, seq_list)}
+    label_data = dict(zip(ID_list, label_list))
+    protein_features = feature_extraction(
+        ID_list,
+        seq_list,
+        conf,
+        device,
+        ligand=ligand,
+        feature_name=conf.data.feature,
+    )
+    rng = np.random.default_rng(random_seed)
+    n_val = int(len(ID_list) * conf.training.val_ratio)
+    val_id = list(rng.choice(ID_list, size=n_val, replace=False))
+    train_id = list(set(ID_list).difference(val_id))
+    if conf.data.data_type == "original":
+        dataset = MetalDataset(ID_list, label_list, protein_features)
+    elif conf.data.data_type == "finetune":
+        assert tokenizer is not None, "Invalid tokenizer"
+        dataset = FineTuneDataset(ID_list, seq_list, label_list, tokenizer)
+    elif conf.data.data_type == "multi_modal":
+        train_dataset = MultiModalDataset(
+            train_id, label_data, protein_features, mode="train"
+        )
+        val_dataset = MultiModalDataset(
+            val_id, label_data, protein_features, mode="train"
+        )
+    elif conf.data.data_type == "uniref":
+        dataset = UniRefDataset(ID_list, protein_features)
+
+    return train_dataset, val_dataset, pos_weight
