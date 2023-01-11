@@ -20,9 +20,10 @@ from data.data_process import prep_dataset_
 from model.model import LMetalSiteMultiModal, LMetalSiteMultiModalBase
 from libauc.optimizers import SOAP
 from torchvision.ops import sigmoid_focal_loss
-from model.loss_ import APLoss
 
-# from model.sampler import ImbalancedDatasetSampler
+# from model.loss_ import APLoss
+# from model.loss import APLoss
+from model.sampler import ImbalancedDatasetSampler
 from torch.utils.data import DataLoader
 from libauc.sampler import DualSampler
 
@@ -52,7 +53,7 @@ def main(conf):
         logging.info("load encoder from {}".format(conf.training.pretrained_encoder))
         model.params.encoder.load_state_dict(checkpoint["encoder_state"])
 
-    optimizer_1 = torch.optim.AdamW(
+    optimizer = torch.optim.AdamW(
         [
             {"params": model.params.classifier.parameters()},
             {
@@ -64,18 +65,6 @@ def main(conf):
         weight_decay=conf.training.weight_decay_adamw,
     )
 
-    optimizer_2 = SOAP(
-        [
-            {"params": model.params.classifier.parameters()},
-            {
-                "params": model.params.encoder.parameters(),
-                "lr": conf.training.encoder_learning_rate,
-            },
-        ],
-        mode="adam",
-        lr=conf.training.learning_rate,
-        weight_decay=conf.training.weight_decay_auprc,
-    )
     metric_auc = BinaryAUROC(thresholds=None)
     metric_auprc = BinaryAveragePrecision(thresholds=None)
     model.training = True  # adding Gaussian noise to embedding
@@ -93,10 +82,6 @@ def main(conf):
     for epoch in range(conf.training.epochs):
         for k, ligand in enumerate(ligand_list):
             if epoch < conf.training.warm_up_epochs:
-                loss_func = torch.nn.BCEWithLogitsLoss(
-                    pos_weight=torch.sqrt(torch.tensor(pos_weights[k]))
-                )
-                # loss_func = torch.nn.BCEWithLogitsLoss()
                 dataloader_train = DataLoader(
                     train_datasets[k],
                     batch_size=conf.training.batch_size,
@@ -105,16 +90,14 @@ def main(conf):
                     pin_memory=True,
                     num_workers=0,
                 )
+                loss_func = torch.nn.BCEWithLogitsLoss(
+                    pos_weight=torch.sqrt(torch.tensor(pos_weights[k]))
+                )
             else:
-                sampler = DualSampler(
-                    train_datasets[k], conf.training.batch_size, sampling_rate=0.5
-                )
-                loss_func = APLoss(
-                    pos_len=sampler.pos_len,
-                    margin=conf.training.margin,
-                    gamma=conf.training.gamma,
-                    device=device,
-                )
+                # sampler = DualSampler(
+                #     train_datasets[k], conf.training.batch_size, sampling_rate=0.5
+                # )
+                sampler = ImbalancedDatasetSampler(train_datasets[k])
                 dataloader_train = DataLoader(
                     train_datasets[k],
                     batch_size=conf.training.batch_size,
@@ -124,6 +107,8 @@ def main(conf):
                     num_workers=0,
                     sampler=sampler,
                 )
+                loss_func = torch.nn.BCEWithLogitsLoss()
+
             dataloader_val = DataLoader(
                 val_datasets[k],
                 batch_size=conf.training.batch_size,
@@ -133,7 +118,7 @@ def main(conf):
                 num_workers=0,
             )
             # loss_func = sigmoid_focal_loss()
-            # loss_func = APLoss().to(device)
+
             logging.info("Training for {}".format(ligand))
             model.ligand = ligand
             model.train()
@@ -141,9 +126,8 @@ def main(conf):
             all_outputs, all_labels = [], []
 
             for i, batch_data in tqdm(enumerate(dataloader_train)):
-                index, feats_1, feats_2, labels = batch_data
-                optimizer_1.zero_grad(set_to_none=True)
-                optimizer_2.zero_grad(set_to_none=True)
+                _, feats_1, feats_2, labels = batch_data
+                optimizer.zero_grad(set_to_none=True)
                 feats_1 = feats_1.to(device)
                 feats_2 = feats_2.to(device)
                 labels = labels.to(device)
@@ -151,14 +135,9 @@ def main(conf):
                 # loss_ = sigmoid_focal_loss(
                 #     outputs * masks, labels, gamma=2, reduction="mean"
                 # )
-                if epoch < conf.training.warm_up_epochs:
-                    loss_ = loss_func(outputs, labels)
-                    loss_.backward()
-                    optimizer_1.step()
-                else:
-                    loss_ = loss_func(outputs, labels, index)
-                    loss_.backward()
-                    optimizer_2.step()
+                loss_ = loss_func(outputs, labels)
+                loss_.backward()
+                optimizer.step()
                 all_outputs.append(torch.sigmoid(outputs))
                 all_labels.append(labels)
                 train_loss += loss_.detach().cpu().numpy()

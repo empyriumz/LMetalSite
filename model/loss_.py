@@ -449,7 +449,7 @@ class pAUC_DRO_Loss(torch.nn.Module):
 
 
 class tpAUC_KL_Loss(torch.nn.Module):
-    """Partial AUC Loss: a stochastic two-way partial AUC based on DRO-KL. In this formulation, we implicitly handle the \alpha and \beta range of PAUC          by tuning \lambda and \tau.
+    """Partial AUC Loss: a stochastic two-way partial AUC based on DRO-KL. In this formulation, we implicitly handle the \alpha and \beta range of PAUC by tuning \lambda and \tau.
 
     Args:
       pos_len: number of positive examples for the training data
