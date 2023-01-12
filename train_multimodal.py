@@ -17,7 +17,11 @@ from script.utils import (
     parse_arguments,
 )
 from data.data_process import prep_dataset_
-from model.model import LMetalSiteMultiModal, LMetalSiteMultiModalBase
+from model.model import (
+    LMetalSiteMultiModal,
+    LMetalSiteMultiModalBase,
+    LMetalSiteMultiModalLSTM,
+)
 from libauc.optimizers import SOAP
 from torchvision.ops import sigmoid_focal_loss
 
@@ -44,6 +48,8 @@ def main(conf):
     # Load LMetalSite model
     if conf.model.name == "base":
         model = LMetalSiteMultiModalBase(conf.model).to(device)
+    elif conf.model.name == "lstm":
+        model = LMetalSiteMultiModalLSTM(conf.model).to(device)
     elif conf.model.name == "cross_attention":
         model = LMetalSiteMultiModal(conf.model).to(device)
     else:
@@ -94,10 +100,10 @@ def main(conf):
                     pos_weight=torch.sqrt(torch.tensor(pos_weights[k]))
                 )
             else:
-                # sampler = DualSampler(
-                #     train_datasets[k], conf.training.batch_size, sampling_rate=0.5
-                # )
-                sampler = ImbalancedDatasetSampler(train_datasets[k])
+                sampler = DualSampler(
+                    train_datasets[k], conf.training.batch_size, sampling_rate=0.25
+                )
+                # sampler = ImbalancedDatasetSampler(train_datasets[k])
                 dataloader_train = DataLoader(
                     train_datasets[k],
                     batch_size=conf.training.batch_size,
@@ -117,8 +123,6 @@ def main(conf):
                 pin_memory=True,
                 num_workers=0,
             )
-            # loss_func = sigmoid_focal_loss()
-
             logging.info("Training for {}".format(ligand))
             model.ligand = ligand
             model.train()
@@ -128,8 +132,8 @@ def main(conf):
             for i, batch_data in tqdm(enumerate(dataloader_train)):
                 _, feats_1, feats_2, labels = batch_data
                 optimizer.zero_grad(set_to_none=True)
-                feats_1 = feats_1.to(device)
-                feats_2 = feats_2.to(device)
+                feats_1 = feats_1.float().to(device)
+                feats_2 = feats_2.float().to(device)
                 labels = labels.to(device)
                 outputs = model(feats_1, feats_2)
                 # loss_ = sigmoid_focal_loss(
@@ -169,8 +173,8 @@ def main(conf):
                 all_outputs, all_labels = [], []
                 for i, batch_data in tqdm(enumerate(dataloader_val)):
                     _, feats_1, feats_2, labels = batch_data
-                    feats_1 = feats_1.to(device)
-                    feats_2 = feats_2.to(device)
+                    feats_1 = feats_1.float().to(device)
+                    feats_2 = feats_2.float().to(device)
                     labels = labels.to(device)
                     outputs = model(feats_1, feats_2)
                     all_outputs.append(torch.sigmoid(outputs))

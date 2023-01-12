@@ -8,6 +8,7 @@ precomputed_embedding/
 precomputed_alignment/
 datasets/
 evoformer_embedding/
+data_processing/
 # C extensions
 *.so
 
